@@ -73,21 +73,6 @@ if st.session_state['giris_yapildi']:
     st.title("🐄 DİAGEN Veteriner LAB Rapor İzleme Paneli")
     st.markdown("Büyükbaş ve küçükbaş numune akışını, kurum performanslarını ve test yoğunluklarını analiz edin.")
 
-    # --- HAFTA HESAPLAMA FONKSİYONU ---
-    def ayin_haftasini_hesapla(tarih):
-        if pd.isnull(tarih): return 1
-        ilk_gun = tarih.replace(day=1)
-        ilk_hafta = ilk_gun.isocalendar().week
-        gecerli_hafta = tarih.isocalendar().week
-        
-        # Yıl geçişlerindeki 52/53. hafta sorununu çözme
-        if ilk_hafta > 50 and gecerli_hafta < 10:
-            ilk_hafta = 0
-            
-        hafta_no = gecerli_hafta - ilk_hafta + 1
-        # Her ayı 4 hafta say (5. haftaya sarkanları 4'e ekle)
-        return min(hafta_no, 4)
-
     # --- VERİ YÜKLEME ---
     @st.cache_data(ttl=60)
     def veri_getir():
@@ -97,8 +82,9 @@ if st.session_state['giris_yapildi']:
             
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
             
-            # Kendi yazdığımız özel hafta hesaplayıcıyı uyguluyoruz
-            df['Hafta Numarası'] = df['Test tarihi'].apply(ayin_haftasini_hesapla)
+            # Doğru karar: Tekrar ISO Calendar (Yılın Haftası) mantığına dönüldü
+            df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
+            df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
             
             ay_sozlugu = {
                 1: 'Ocak', 2: 'Şubat', 3: 'Mart', 4: 'Nisan', 
@@ -118,18 +104,32 @@ if st.session_state['giris_yapildi']:
     df_ham = veri_getir()
 
     if not df_ham.empty:
-        # --- FİLTRELER ---
-        st.sidebar.header("🔍 Veri Filtreleri")
-        mevcut_aylar = df_ham['Ay'].dropna().unique().tolist()
-        secilen_aylar = st.sidebar.multiselect("İncelenecek Ayları Seçin:", mevcut_aylar, default=mevcut_aylar)
+        # Ayların kronolojik sıralaması
+        ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
         
+        # --- FİLTRELER (AY VE HAFTA) ---
+        st.sidebar.header("🔍 Veri Filtreleri")
+        
+        # Ayları mantıksal sıraya sokma
+        mevcut_aylar = df_ham['Ay'].dropna().unique().tolist()
+        mevcut_aylar = sorted(mevcut_aylar, key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
+        
+        # Haftaları sayısal sıraya sokma (Örn: 2, 3, 4, 5...)
+        mevcut_haftalar = sorted(df_ham['Hafta Numarası'].dropna().unique().tolist())
+        hafta_sirasi = [f"{h}. Hafta" for h in mevcut_haftalar]
+        
+        secilen_aylar = st.sidebar.multiselect("İncelenecek Ayları Seçin:", mevcut_aylar, default=mevcut_aylar)
+        secilen_haftalar = st.sidebar.multiselect("İncelenecek Haftaları Seçin:", hafta_sirasi, default=hafta_sirasi)
+        
+        # Filtreleri Uygulama
+        df = df_ham.copy()
         if secilen_aylar:
-            df = df_ham[df_ham['Ay'].isin(secilen_aylar)]
-        else:
-            df = df_ham
+            df = df[df['Ay'].isin(secilen_aylar)]
+        if secilen_haftalar:
+            df = df[df['Hafta Metni'].isin(secilen_haftalar)]
         
         if df.empty:
-            st.warning("Seçili filtrelere uygun veri bulunamadı!")
+            st.warning("Seçili filtrelere uygun veri bulunamadı! Lütfen sol menüden farklı aylar veya haftalar seçin.")
         else:
             # --- OTOMATİK İÇGÖRÜLER ---
             st.subheader("💡 GENEL VERİLER")
@@ -137,13 +137,11 @@ if st.session_state['giris_yapildi']:
             en_yogun_ay = df.groupby('Ay')['Numune adedi (işlenen numune)'].sum().idxmax()
             en_cok_is_yapan_kurum = df.groupby('Kurum/Numune Sahibi')['Numune adedi (işlenen numune)'].sum().idxmax()
             en_populer_test = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().idxmax()
-            en_yogun_hafta = df.groupby('Hafta Numarası')['Numune adedi (işlenen numune)'].sum().idxmax()
             
-            i1, i2, i3, i4 = st.columns(4)
-            i1.info(f"📅 **En Yoğun Ay:**\n\n {en_yogun_ay} ayında sürü taramaları ve testler zirve yaptı.")
+            i1, i2, i3 = st.columns(3)
+            i1.info(f"📅 **En Yoğun Ay (Seçili Veride):**\n\n {en_yogun_ay} ayında testler zirve yaptı.")
             i2.success(f"🏢 **En Çok Numune Gönderen:**\n\n {en_cok_is_yapan_kurum}")
             i3.warning(f"🔬 **En Popüler Test:**\n\n {en_populer_test} paneli en çok çalışılan işlem oldu.")
-            i4.error(f"🔥 **Zirve Yapan Hafta:**\n\n Her ayın genel {en_yogun_hafta}. Haftası laboratuvarın en yoğun zamanıdır.")
             
             st.divider()
 
@@ -155,7 +153,7 @@ if st.session_state['giris_yapildi']:
             c1, c2, c3 = st.columns(3)
             c1.metric("🐄 Toplam Gelen Numune", f"{toplam_gelen:,.0f} Adet")
             c2.metric("🧪 İşlenen Test Adedi", f"{toplam_islenen:,.0f} Adet")
-            c3.metric("🚜 Hizmet Verilen Kurum/Çiftlik", f"{toplam_kurum} Adet")
+            c3.metric("🚜 Hizmet Verilen Çiftlik/Kurum", f"{toplam_kurum} Adet")
 
             st.divider()
 
@@ -188,36 +186,38 @@ if st.session_state['giris_yapildi']:
             st.divider()
 
             # --- ZAMAN ÇİZELGESİ VE YOĞUNLUK ANALİZİ ---
-            st.subheader("⏳ Dönemsel Test ve Tarama Yoğunluğu")
-            z1, z2 = st.columns(2)
+            st.subheader("⏳ Aylara Göre Haftalık Test Yoğunluğu")
             
-            with z1:
-                haftalik_aylik = df.groupby(['Ay', 'Hafta Numarası'])['Numune adedi (işlenen numune)'].sum().reset_index()
-                haftalik_aylik['Hafta Metni'] = haftalik_aylik['Hafta Numarası'].astype(str) + ". Hafta"
+            haftalik_aylik = df.groupby(['Ay', 'Hafta Metni'])['Numune adedi (işlenen numune)'].sum().reset_index()
+            siralama_ayari = {'Ay': ay_sirasi, 'Hafta Metni': hafta_sirasi}
+            
+            if grafik_tarzi == "Çubuk (Bar)":
+                fig_zaman = px.bar(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
+                                   text_auto=True, barmode='group', category_orders=siralama_ayari,
+                                   color_discrete_sequence=zaman_renkleri)
+            elif grafik_tarzi == "Çizgi (Line)":
+                fig_zaman = px.line(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
+                                    markers=True, category_orders=siralama_ayari,
+                                    color_discrete_sequence=zaman_renkleri)
+            else:
+                fig_zaman = px.area(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
+                                    category_orders=siralama_ayari,
+                                    color_discrete_sequence=zaman_renkleri)
                 
-                # Kullanıcının Seçtiği Grafik Tarzına Göre Çizim Yapma
-                if grafik_tarzi == "Çubuk (Bar)":
-                    fig_zaman = px.bar(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
-                                       title='Aylara Göre Haftalık Test Yoğunluğu', text_auto=True, barmode='group',
-                                       color_discrete_sequence=zaman_renkleri)
-                elif grafik_tarzi == "Çizgi (Line)":
-                    fig_zaman = px.line(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
-                                        title='Aylara Göre Haftalık Test Yoğunluğu', markers=True,
-                                        color_discrete_sequence=zaman_renkleri)
-                else:
-                    fig_zaman = px.area(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
-                                        title='Aylara Göre Haftalık Test Yoğunluğu',
-                                        color_discrete_sequence=zaman_renkleri)
-                    
-                st.plotly_chart(fig_zaman, use_container_width=True)
-                
-            with z2:
-                test_ozet = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().reset_index()
-                test_ozet = test_ozet.sort_values(by='Numune adedi (işlenen numune)', ascending=False).head(10)
-                
-                fig_testler = px.funnel(test_ozet, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)',
-                                        title='🐑 En Çok Çalışılan Hastalık/Test Panelleri',
-                                        color_discrete_sequence=zaman_renkleri)
-                st.plotly_chart(fig_testler, use_container_width=True)
+            st.plotly_chart(fig_zaman, use_container_width=True)
+            
+            st.divider()
+            
+            # --- HASTALIK / TEST PANELLERİ ---
+            st.subheader("🐑 Hastalık / Test Panelleri Dağılımı")
+            
+            test_ozet = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().reset_index()
+            test_ozet = test_ozet.sort_values(by='Numune adedi (işlenen numune)', ascending=False).head(10)
+            
+            fig_testler = px.funnel(test_ozet, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)',
+                                    title='En Çok Çalışılan Hastalık/Test Panelleri (İlk 10)',
+                                    color_discrete_sequence=zaman_renkleri)
+            st.plotly_chart(fig_testler, use_container_width=True)
 
+            # Footer
             st.caption("Veriler 'veri.xlsx' dosyasından anlık olarak beslenmektedir. Son güncelleme: " + datetime.datetime.now().strftime("%H:%M:%S"))
