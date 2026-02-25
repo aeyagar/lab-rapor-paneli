@@ -11,6 +11,7 @@ st.markdown("Aylık ve haftalık bazda numune akışını, kurum performansları
 
 # --- VERİ YÜKLEME VE TEMİZLEME ---
 # --- VERİ YÜKLEME VE TEMİZLEME ---
+# --- VERİ YÜKLEME VE TEMİZLEME ---
 @st.cache_data(ttl=60)
 def veri_getir():
     try:
@@ -20,7 +21,14 @@ def veri_getir():
         # Tarih ve zaman ayarları
         df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
         df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
-        df['Ay'] = df['Test tarihi'].dt.month_name(locale='tr_TR.utf8')
+        
+        # SUNUCUNUN HATA VERMEMESİ İÇİN AYLARI MANUEL ÇEVİRİYORUZ
+        ay_sozlugu = {
+            1: 'Ocak', 2: 'Şubat', 3: 'Mart', 4: 'Nisan', 
+            5: 'Mayıs', 6: 'Haziran', 7: 'Temmuz', 8: 'Ağustos', 
+            9: 'Eylül', 10: 'Ekim', 11: 'Kasım', 12: 'Aralık'
+        }
+        df['Ay'] = df['Test tarihi'].dt.month.map(ay_sozlugu)
         
         df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
         df['Numune adedi (işlenen numune)'] = pd.to_numeric(df['Numune adedi (işlenen numune)'], errors='coerce').fillna(0)
@@ -135,4 +143,5 @@ if not df_ham.empty:
         # Alt Bilgi
 
         st.caption("Veriler 'veri.xlsx' dosyasından anlık olarak beslenmektedir. Son güncelleme: " + datetime.datetime.now().strftime("%H:%M:%S"))
+
 
