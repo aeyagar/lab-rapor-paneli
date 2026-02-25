@@ -9,9 +9,10 @@ import os
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
-# --- 🎨 ÖZEL ESTETİK TASARIM (CSS) ---
+# --- 🎨 KURUMSAL TASARIM VE ÇERÇEVELER (CSS) ---
 st.markdown("""
 <style>
+    /* Ana Başlık Kutusu */
     .ana-baslik-kutusu {
         background-color: #ffffff;
         border: 4px solid #2e956e;
@@ -27,6 +28,7 @@ st.markdown("""
         font-weight: 900 !important;
         margin: 0;
     }
+    /* Metrik Kare Balonlar */
     [data-testid="stMetric"] {
         background-color: #ffffff;
         border: 3px solid #2e956e !important;
@@ -44,6 +46,7 @@ st.markdown("""
         font-weight: 900 !important;
         font-size: 2.5rem !important;
     }
+    /* Sol Menü Kutucukları */
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
@@ -56,6 +59,14 @@ st.markdown("""
     [data-testid="stSidebar"] label p {
         font-weight: 900 !important;
         color: #1e2125 !important;
+    }
+    /* İmza Alanı Stil */
+    .imza-alani {
+        text-align: right;
+        font-family: 'Courier New', Courier, monospace;
+        font-weight: bold;
+        color: #1e2125;
+        padding-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -82,16 +93,20 @@ if not st.session_state['giris_yapildi']:
 # --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
     
+    # Üst Başlık
     st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
-    if os.path.exists("logo.png"): st.sidebar.image("logo.png", use_container_width=True)
+    # Sidebar Logo ve Alt Yazısı
+    if os.path.exists("logo.png"): 
+        st.sidebar.image("logo.png", use_container_width=True)
+        st.sidebar.markdown("<p style='text-align: center; font-weight: 800; color: #2e956e;'>Veteriner Teşhis ve Analiz Laboratuvarı</p>", unsafe_allow_html=True)
+        st.sidebar.divider()
     
-    # --- RENK YÖNETİMİ ---
+    # Görünüm Ayarları
     st.sidebar.markdown("### ⚙️ Görünüm Ayarları")
     grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Seçeneği:", ["📈 Çubuk (Bar)", "🍕 Pasta (Ay Bazlı)"])
     secilen_renk = st.sidebar.selectbox("Grafik Renk Paleti:", ["Canlı Yeşil", "Kurumsal Mavi", "Sıcak Turuncu", "Renkli"])
     
-    # Tüm grafiklerde kullanılacak ortak renk haritası
     renk_ayarlari = {
         "Canlı Yeşil": {"skala": "Greens", "liste": px.colors.qualitative.Dark2},
         "Kurumsal Mavi": {"skala": "Blues", "liste": px.colors.qualitative.Pastel1},
@@ -101,7 +116,7 @@ if st.session_state['giris_yapildi']:
     guncel_skala = renk_ayarlari[secilen_renk]["skala"]
     guncel_liste = renk_ayarlari[secilen_renk]["liste"]
 
-    # --- VERİ YÜKLEME ---
+    # Veri Yükleme
     @st.cache_data(ttl=60)
     def veri_getir():
         try:
@@ -128,10 +143,15 @@ if st.session_state['giris_yapildi']:
         secilen_aylar = st.sidebar.multiselect("Görmek İstediğiniz Aylar:", mevcut_aylar, default=mevcut_aylar)
         df = df_ham[df_ham['Ay'].isin(secilen_aylar)] if secilen_aylar else df_ham
         
+        # Sol Alt Çıkış ve İmza
         st.sidebar.divider()
-        st.sidebar.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
+        col_cikis, col_imza = st.sidebar.columns([1,1])
+        with col_cikis:
+            st.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
+        with col_imza:
+            st.markdown('<div class="imza-alani">AEY</div>', unsafe_allow_html=True)
 
-        # --- METRİKLER ---
+        # Metrikler
         m1, m2, m3 = st.columns(3)
         m1.metric("🐄 Toplam Gelen Numune", f"{int(df['Gelen Numune Sayısı'].sum()):,.0f} Adet")
         m2.metric("🧪 İşlenen Test Adedi", f"{int(df['Numune adedi (işlenen numune)'].sum()):,.0f} Adet")
@@ -139,7 +159,7 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- 1. MÜŞTERİ ANALİZİ (RENK PALETİNE BAĞLANDI) ---
+        # Grafikler
         m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
         fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
                       title='Müşteri Bazlı Numune Girişi (İlk 15)', color='Gelen Numune Sayısı', 
@@ -158,7 +178,6 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- 2. ZAMAN ANALİZİ (RENK PALETİNE BAĞLANDI) ---
         st.subheader("⏳ Dönemsel Yoğunluk Analizi")
         if grafik_tarzi == "📈 Çubuk (Bar)":
             haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['Numune adedi (işlenen numune)'].sum().reset_index()
@@ -180,7 +199,6 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- 3. TEST FUNNEL (RENK PALETİNE BAĞLANDI) ---
         test_dagilimi = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(20)
         fig_test = px.funnel(test_dagilimi, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)', 
                              title='En Çok Çalışılan Test Panelleri (İlk 20)', color_discrete_sequence=guncel_liste)
