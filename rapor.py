@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 import datetime
 import os
 
@@ -10,7 +12,6 @@ st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", 
 # --- 🎨 ÖZEL ESTETİK ÇERÇEVE TASARIMI (CSS) ---
 st.markdown("""
 <style>
-    /* Metrik Kare Şablonları */
     div[data-testid="metric-container"] {
         background-color: #ffffff;
         border: 2px solid #2e956e;
@@ -23,7 +24,6 @@ st.markdown("""
         color: #2e956e;
         font-weight: bold;
     }
-    /* Sol Menü Arka Planı */
     [data-testid="stSidebar"] {
         background-color: #f8f9fa;
     }
@@ -54,13 +54,12 @@ if not st.session_state['giris_yapildi']:
 # --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
     
-    # --- SOL MENÜ ---
     if os.path.exists("logo.png"):
         st.sidebar.image("logo.png", use_container_width=True)
     
     st.sidebar.header("🎨 Görünüm Ayarları")
     secilen_renk = st.sidebar.selectbox("Renk Paleti", ["Pastel", "Kurumsal Mavi", "Canlı Yeşil", "Renkli"])
-    grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Alternatifi", ["📈 Çubuk (Bar)", "🍕 Pasta (Haftalık Dağılım)"])
+    grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Alternatifi", ["📈 Çubuk (Bar)", "🍕 Pasta (Ay Bazlı Haftalık Dağılım)"])
     
     renk_map = {
         "Pastel": px.colors.qualitative.Pastel,
@@ -100,13 +99,12 @@ if st.session_state['giris_yapildi']:
     if not df_ham.empty:
         ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
         
-        # --- FİLTRELER ---
         mevcut_aylar = sorted(df_ham['Ay'].dropna().unique().tolist(), key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
         secilen_aylar = st.sidebar.multiselect("Ayları Seçin:", mevcut_aylar, default=mevcut_aylar)
         
         df = df_ham[df_ham['Ay'].isin(secilen_aylar)] if secilen_aylar else df_ham
         
-        # --- 1. ÜST BAR KARE ŞABLONLAR (METRİKLER) ---
+        # --- METRİKLER ---
         m1, m2, m3 = st.columns(3)
         m1.metric("🐄 Toplam Gelen Numune", f"{int(df['Gelen Numune Sayısı'].sum()):,.0f} Adet")
         m2.metric("🧪 İşlenen Test Adedi", f"{int(df['Numune adedi (işlenen numune)'].sum()):,.0f} Adet")
@@ -114,7 +112,7 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- 3. MÜŞTERİ ANALİZLERİ (GERİ GELDİ) ---
+        # --- MÜŞTERİ ANALİZLERİ ---
         col_m1, col_m2 = st.columns(2)
         with col_m1:
             m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(10)
@@ -132,25 +130,39 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- 2. ZAMAN ÇİZELGESİ ALTERNATİFLERİ ---
+        # --- ZAMAN ÇİZELGESİ ALTERNATİFLERİ (GÜNCELLENDİ) ---
         st.subheader("⏳ Dönemsel Analiz")
-        haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['Numune adedi (işlenen numune)'].sum().reset_index()
         
         if grafik_tarzi == "📈 Çubuk (Bar)":
+            haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['Numune adedi (işlenen numune)'].sum().reset_index()
             fig_zaman = px.bar(haftalik_veri, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni', 
                                barmode='group', title='Aylık ve Haftalık Test Dağılımı', text_auto=True,
                                category_orders={'Ay': ay_sirasi}, color_discrete_sequence=renk_paleti)
             st.plotly_chart(fig_zaman, use_container_width=True)
         else:
-            # Pasta (Donut) Grafiği için Haftalık Toplam Veri
-            pasta_veri = df.groupby('Hafta Metni')['Numune adedi (işlenen numune)'].sum().reset_index()
-            fig_zaman = px.pie(pasta_veri, values='Numune adedi (işlenen numune)', names='Hafta Metni', 
-                               hole=0.4, title='Toplam Testlerin Haftalara Göre Genel Oranı',
-                               color_discrete_sequence=renk_paleti)
-            fig_zaman.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_zaman, use_container_width=True)
+            # Her ay için ayrı bir pasta (Donut) grafiği oluşturma
+            secili_aylar_liste = sorted(df['Ay'].unique().tolist(), key=lambda x: ay_sirasi.index(x))
+            num_cols = 3  # Satır başına 3 grafik
+            num_rows = (len(secili_aylar_liste) + num_cols - 1) // num_cols
+            
+            fig_donut = make_subplots(rows=num_rows, cols=num_cols, 
+                                      specs=[[{'type':'domain'}]*num_cols]*num_rows,
+                                      subplot_titles=secili_aylar_liste)
 
-        # --- 4. DİĞER VERİLER (TEST DAĞILIMI) ---
+            for i, ay in enumerate(secili_aylar_liste):
+                ay_verisi = df[df['Ay'] == ay].groupby('Hafta Metni')['Numune adedi (işlenen numune)'].sum().reset_index()
+                row = i // num_cols + 1
+                col = i % num_cols + 1
+                
+                fig_donut.add_trace(go.Pie(labels=ay_verisi['Hafta Metni'], 
+                                           values=ay_verisi['Numune adedi (işlenen numune)'], 
+                                           name=ay, hole=0.4), row=row, col=col)
+
+            fig_donut.update_layout(title_text="Her Ayın Kendi Haftalık Dağılımı", height=300*num_rows)
+            fig_donut.update_traces(textinfo='percent')
+            st.plotly_chart(fig_donut, use_container_width=True)
+
+        # --- TEST DAĞILIMI ---
         st.divider()
         test_dagilimi = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(15)
         fig_test = px.funnel(test_dagilimi, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)', 
