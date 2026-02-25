@@ -2,45 +2,53 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import datetime
+import os
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Laboratuvar Yönetim Paneli", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🧬", layout="wide")
 
 # --- OTURUM (SESSION) YÖNETİMİ ---
-# Eğer kullanıcı henüz giriş yapmadıysa, durumu 'False' olarak belirliyoruz
 if 'giris_yapildi' not in st.session_state:
     st.session_state['giris_yapildi'] = False
 
 # --- GİRİŞ EKRANI ---
 if not st.session_state['giris_yapildi']:
-    # Sayfayı ortalamak için boş sütunlar kullanıyoruz
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
+        # Giriş ekranına da logo ekleyelim (Eğer yüklendiyse)
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=250)
+            
         st.title("🔒 Sisteme Giriş")
-        st.markdown("Lütfen laboratuvar paneline erişmek için bilgilerinizi girin.")
+        st.markdown("Lütfen DİAGEN Laboratuvar paneline erişmek için bilgilerinizi girin.")
         
         with st.form("login_form"):
             kullanici_adi = st.text_input("Kullanıcı Adı")
-            sifre = st.text_input("Şifre", type="password") # Şifre yazılırken yıldızlı görünür
+            sifre = st.text_input("Şifre", type="password")
             giris_butonu = st.form_submit_button("Giriş Yap")
             
             if giris_butonu:
-                # KULLANICI ADI VE ŞİFREYİ BURADAN DEĞİŞTİREBİLİRSİNİZ:
                 if kullanici_adi == "admin" and sifre == "lab2026":
                     st.session_state['giris_yapildi'] = True
-                    st.rerun() # Sayfayı yenile ve asıl paneli göster
+                    st.rerun()
                 else:
                     st.error("❌ Kullanıcı adı veya şifre hatalı!")
 
-# --- ANA UYGULAMA (SADECE GİRİŞ YAPILINCA ÇALIŞIR) ---
+# --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
     
-    # Sol Menüye Çıkış Yap Butonu Ekleme
+    # --- SOL MENÜ ---
+    # Yan menüye logo ekleme
+    if os.path.exists("logo.png"):
+        st.sidebar.image("logo.png", use_container_width=True)
+        st.sidebar.divider()
+        
     st.sidebar.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
     st.sidebar.divider()
 
-    st.title("🧬 Laboratuvar İş Zekası ve Yönetim Paneli")
+    # BAŞLIK DEĞİŞİKLİĞİ 2
+    st.title("🧬 DİAGEN Veteriner LAB Rapor İzleme Paneli")
     st.markdown("Aylık ve haftalık bazda numune akışını, kurum performanslarını ve test yoğunluklarını analiz edin.")
 
     # --- VERİ YÜKLEME VE TEMİZLEME ---
@@ -53,7 +61,6 @@ if st.session_state['giris_yapildi']:
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
             df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
             
-            # Sunucunun hata vermemesi için ayları manuel çeviriyoruz
             ay_sozlugu = {
                 1: 'Ocak', 2: 'Şubat', 3: 'Mart', 4: 'Nisan', 
                 5: 'Mayıs', 6: 'Haziran', 7: 'Temmuz', 8: 'Ağustos', 
@@ -86,8 +93,8 @@ if st.session_state['giris_yapildi']:
         if df.empty:
             st.warning("Seçili filtrelere uygun veri bulunamadı!")
         else:
-            # --- OTOMATİK İÇGÖRÜLER ---
-            st.subheader("💡 Yapay Zeka Özeti ve Öne Çıkanlar")
+            # BAŞLIK DEĞİŞİKLİĞİ 1
+            st.subheader("💡 GENEL VERİLER")
             
             en_yogun_ay = df.groupby('Ay')['Numune adedi (işlenen numune)'].sum().idxmax()
             en_cok_is_yapan_kurum = df.groupby('Kurum/Numune Sahibi')['Numune adedi (işlenen numune)'].sum().idxmax()
