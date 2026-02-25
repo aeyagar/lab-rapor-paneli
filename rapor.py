@@ -10,6 +10,7 @@ st.title("🧬 Laboratuvar İş Zekası ve Yönetim Paneli")
 st.markdown("Aylık ve haftalık bazda numune akışını, kurum performanslarını ve test yoğunluklarını analiz edin.")
 
 # --- VERİ YÜKLEME VE TEMİZLEME ---
+# --- VERİ YÜKLEME VE TEMİZLEME ---
 @st.cache_data(ttl=60)
 def veri_getir():
     try:
@@ -18,7 +19,6 @@ def veri_getir():
         
         # Tarih ve zaman ayarları
         df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
-        # Haftayı Yıl-Hafta formatında alalım ki yıllar karışmasın
         df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
         df['Ay'] = df['Test tarihi'].dt.month_name(locale='tr_TR.utf8')
         
@@ -27,8 +27,8 @@ def veri_getir():
         
         return df
     except Exception as e:
-    st.error(f"SİSTEMİN GERÇEK HATASI: {e}")
-    return pd.DataFrame()
+        st.error(f"SİSTEMİN GERÇEK HATASI: {e}")
+        return pd.DataFrame()
     
 df_ham = veri_getir()
 
@@ -135,3 +135,4 @@ if not df_ham.empty:
         # Alt Bilgi
 
         st.caption("Veriler 'veri.xlsx' dosyasından anlık olarak beslenmektedir. Son güncelleme: " + datetime.datetime.now().strftime("%H:%M:%S"))
+
