@@ -12,56 +12,66 @@ st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", 
 # --- 🎨 ÖZEL ESTETİK ÇERÇEVE VE KALIN YAZI TASARIMI (CSS) ---
 st.markdown("""
 <style>
-    /* 1. Üst Bar Kare Balon Metrikler */
-    div[data-testid="metric-container"] {
+    /* 1. ANA BAŞLIK ÇERÇEVESİ */
+    .ana-baslik-kutusu {
         background-color: #ffffff;
-        border: 3px solid #2e956e; /* Daha kalın yeşil çerçeve */
-        padding: 25px;
-        border-radius: 20px; /* Balonumsu yuvarlak köşeler */
-        box-shadow: 6px 6px 20px rgba(0,0,0,0.1);
+        border: 4px solid #2e956e;
+        padding: 20px;
+        border-radius: 15px;
         text-align: center;
+        margin-bottom: 30px;
+        box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
     }
-    /* Metrik Başlıkları (Kalın) */
-    div[data-testid="stMetricLabel"] {
-        color: #1e2125 !important;
-        font-weight: 800 !important;
-        font-size: 1.2rem !important;
-    }
-    /* Metrik Sayıları (Ekstra Kalın) */
-    div[data-testid="stMetricValue"] {
-        color: #2e956e !important;
+    .ana-baslik-yazisi {
+        color: #1e2125;
+        font-size: 40px !important;
         font-weight: 900 !important;
-        font-size: 2.2rem !important;
+        margin: 0;
     }
 
-    /* 2. Sol Menü (Sidebar) Çerçeve ve Yazı Ayarları */
+    /* 2. Üst Bar Kare Balon Metrikler */
+    [data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 3px solid #2e956e !important; /* Kesin çerçeve */
+        padding: 20px !important;
+        border-radius: 20px !important;
+        box-shadow: 6px 6px 20px rgba(0,0,0,0.1) !important;
+        display: block;
+        width: 100%;
+    }
+    
+    /* Metrik İçindeki Yazıların Kalınlığı */
+    div[data-testid="stMetricLabel"] > div {
+        color: #1e2125 !important;
+        font-weight: 800 !important;
+        font-size: 1.3rem !important;
+    }
+    div[data-testid="stMetricValue"] > div {
+        color: #2e956e !important;
+        font-weight: 900 !important;
+        font-size: 2.5rem !important;
+    }
+
+    /* 3. Sol Menü (Sidebar) Çerçeveleri */
     [data-testid="stSidebar"] {
         background-color: #f1f3f5;
     }
     
-    /* Sol taraftaki her bir grup için çerçeve (Filtreler ve Seçenekler) */
-    section[data-testid="stSidebar"] .stMultiSelect, 
-    section[data-testid="stSidebar"] .stSelectbox,
-    section[data-testid="stSidebar"] .stRadio {
-        background-color: #ffffff;
-        border: 2px solid #ced4da;
-        padding: 15px;
-        border-radius: 12px;
-        margin-bottom: 20px;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+    /* Sidebar elemanlarını kutu içine al */
+    div[data-testid="stSidebarUserContent"] .stMultiSelect, 
+    div[data-testid="stSidebarUserContent"] .stSelectbox,
+    div[data-testid="stSidebarUserContent"] .stRadio {
+        background-color: #ffffff !important;
+        border: 2px solid #2e956e !important;
+        padding: 15px !important;
+        border-radius: 12px !important;
+        margin-bottom: 15px !important;
     }
 
-    /* Sol taraftaki tüm yazıların kalınlaştırılması */
-    [data-testid="stSidebar"] label, [data-testid="stSidebar"] p {
+    /* Sol taraf kalın yazılar */
+    [data-testid="stSidebar"] label p {
+        font-weight: 900 !important;
         color: #1e2125 !important;
-        font-weight: 700 !important; /* Kalın yazılar */
-        font-size: 1rem !important;
-    }
-
-    /* Başlık Stilini Güçlendir */
-    h1, h2, h3 {
-        font-weight: 800 !important;
-        color: #1e2125;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -87,10 +97,18 @@ if not st.session_state['giris_yapildi']:
 
 # --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
+    
+    # ANA BAŞLIK (ÇERÇEVELİ)
+    st.markdown("""
+        <div class="ana-baslik-kutusu">
+            <h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1>
+        </div>
+    """, unsafe_allow_html=True)
+
     if os.path.exists("logo.png"): st.sidebar.image("logo.png", use_container_width=True)
     
-    # SOL TARAF - ZAMAN ÇİZELGESİ SEÇENEKLERİ (Çerçeveli)
-    st.sidebar.markdown("### ⚙️ Ayarlar")
+    # SOL TARAF AYARLAR
+    st.sidebar.markdown("### ⚙️ Görünüm Ayarları")
     grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Seçeneği:", ["📈 Çubuk (Bar)", "🍕 Pasta (Ay Bazlı)"])
     secilen_renk = st.sidebar.selectbox("Grafik Renk Paleti:", ["Canlı Yeşil", "Kurumsal Mavi", "Pastel", "Renkli"])
     
@@ -121,7 +139,7 @@ if st.session_state['giris_yapildi']:
     if not df_ham.empty:
         ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
         
-        # SOL TARAF - AY FİLTRELERİ (Çerçeveli)
+        # SOL TARAF FİLTRELER
         st.sidebar.markdown("### 📅 Filtreler")
         mevcut_aylar = sorted(df_ham['Ay'].dropna().unique().tolist(), key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
         secilen_aylar = st.sidebar.multiselect("Görmek İstediğiniz Aylar:", mevcut_aylar, default=mevcut_aylar)
@@ -132,7 +150,6 @@ if st.session_state['giris_yapildi']:
         st.sidebar.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
 
         # --- ÜST BAR - KARE BALON METRİKLER ---
-        st.subheader("📊 Genel Performans Özeti")
         m1, m2, m3 = st.columns(3)
         m1.metric("🐄 Toplam Gelen Numune", f"{int(df['Gelen Numune Sayısı'].sum()):,.0f} Adet")
         m2.metric("🧪 İşlenen Test Adedi", f"{int(df['Numune adedi (işlenen numune)'].sum()):,.0f} Adet")
@@ -140,26 +157,33 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- MÜŞTERİ ANALİZLERİ (TAM GENİŞLİK VE BÜYÜK) ---
+        # --- GRAFİKLER (TAM GENİŞLİK) ---
         m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
         fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
                       title='Müşteri Bazlı Numune Girişi (İlk 15)', color='Gelen Numune Sayısı', 
                       color_continuous_scale='Greens', text_auto='.0f')
         fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
-        fig1.update_traces(textfont_size=15, textposition="outside", hovertemplate="<b>%{y}</b><br>Miktar: %{x}<extra></extra>")
+        fig1.update_traces(textfont_size=15, textposition="outside")
         st.plotly_chart(fig1, use_container_width=True)
 
         st.divider()
 
-        # --- ZAMAN ANALİZİ ---
-        st.subheader("⏳ Dönemsel Yoğunluk Analizi")
+        m_islenen = df.groupby('Kurum/Numune Sahibi')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(15)
+        fig2 = px.bar(m_islenen, x='Numune adedi (işlenen numune)', y='Kurum/Numune Sahibi', orientation='h', 
+                      title='Müşterilere Göre İşlenen Test Adedi (İlk 15)', color='Numune adedi (işlenen numune)', 
+                      color_continuous_scale='Teal', text_auto='.0f')
+        fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
+        fig2.update_traces(textfont_size=15, textposition="outside")
+        st.plotly_chart(fig2, use_container_width=True)
+
+        st.divider()
+
         if grafik_tarzi == "📈 Çubuk (Bar)":
             haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['Numune adedi (işlenen numune)'].sum().reset_index()
             fig_zaman = px.bar(haftalik_veri, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni', 
                                barmode='group', title='Aylık/Haftalık İşlem Hacmi', text_auto='.0f',
                                category_orders={'Ay': ay_sirasi}, color_discrete_sequence=renk_paleti)
             fig_zaman.update_layout(height=550)
-            fig_zaman.update_traces(textfont_size=13, textposition="outside")
             st.plotly_chart(fig_zaman, use_container_width=True)
         else:
             secili_aylar_liste = sorted(df['Ay'].unique().tolist(), key=lambda x: ay_sirasi.index(x))
@@ -170,16 +194,13 @@ if st.session_state['giris_yapildi']:
                 ay_verisi = df[df['Ay'] == ay].groupby('Hafta Metni')['Numune adedi (işlenen numune)'].sum().reset_index()
                 fig_donut.add_trace(go.Pie(labels=ay_verisi['Hafta Metni'], values=ay_verisi['Numune adedi (işlenen numune)'], name=ay, hole=0.4), row=(i//num_cols)+1, col=(i%num_cols)+1)
             fig_donut.update_layout(height=450*num_rows)
-            fig_donut.update_traces(textinfo='percent+value', hovertemplate="<b>%{label}</b><br>Değer: %{value}<extra></extra>")
             st.plotly_chart(fig_donut, use_container_width=True)
 
         st.divider()
 
-        # --- TEST DAĞILIMI (FUNNEL) ---
         test_dagilimi = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(20)
         fig_test = px.funnel(test_dagilimi, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)', title='En Çok Çalışılan Test Panelleri (İlk 20)')
-        fig_test.update_layout(height=750)
-        fig_test.update_traces(textfont_size=15)
+        fig_test.update_layout(height=800)
         st.plotly_chart(fig_test, use_container_width=True)
 
-        st.caption(f"⚙️ DİAGEN Veri Kaynağı: veri.xlsx | Son Güncelleme: {datetime.datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"⚙️ Son Güncelleme: {datetime.datetime.now().strftime('%H:%M:%S')}")
