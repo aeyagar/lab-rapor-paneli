@@ -7,6 +7,69 @@ import os
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
+# ==========================================
+# 🎨 ÖZEL CSS İLE GÖRÜNÜMÜ GÜÇLENDİRME
+# ==========================================
+st.markdown("""
+<style>
+    /* Ana sayfa arka planını çok açık, göz yormayan bir medikal gri yapalım */
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    
+    /* Üstteki Metrik (Sayı) Kutularını kartvizit gibi şık bir kutu içine alalım */
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border: 1px solid #e9ecef;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 2px 4px 10px rgba(0,0,0,0.03);
+        transition: transform 0.2s;
+    }
+    /* Kutuların üzerine fareyle gelince hafifçe yukarı kalkma efekti */
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-5px);
+        box-shadow: 2px 6px 15px rgba(0,0,0,0.08);
+    }
+    
+    /* Metrik sayılarının rengi (Canlı Kurumsal Yeşil) */
+    div[data-testid="stMetricValue"] {
+        color: #2e956e;
+        font-weight: bold;
+    }
+
+    /* Tüm Butonların (Giriş, Çıkış vs.) Görünümü */
+    .stButton>button {
+        border-radius: 25px; /* Yuvarlak köşeler */
+        background-color: #2e956e;
+        color: white;
+        border: none;
+        padding: 10px 24px;
+        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    /* Butonun üzerine fareyle gelince renginin koyulaşması */
+    .stButton>button:hover {
+        background-color: #1b6649;
+        box-shadow: 0px 6px 10px rgba(0,0,0,0.2);
+        color: #ffffff;
+    }
+    
+    /* Sol Menü (Sidebar) Ayarları */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 2px solid #f1f3f5;
+    }
+    
+    /* Uyarı ve Bilgi Kutularının köşe ayarları */
+    .stAlert {
+        border-radius: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+# ==========================================
+
 # --- OTURUM (SESSION) YÖNETİMİ ---
 if 'giris_yapildi' not in st.session_state:
     st.session_state['giris_yapildi'] = False
@@ -47,11 +110,10 @@ if st.session_state['giris_yapildi']:
         st.sidebar.divider()
 
     # --- KULLANICI GÖRÜNÜM AYARLARI ---
-    st.sidebar.header("🎨 Görünüm Ayarları")
+    st.sidebar.header("🎨 Grafik Renk Ayarları")
     secilen_tema = st.sidebar.selectbox("Grafik Renk Teması", ["Kurumsal (Mavi & Turkuaz)", "Sıcak (Kırmızı & Turuncu)", "Doğa (Yeşil Tonları)", "Canlı (Pastel & Karışık)"])
     grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Tarzı", ["Çubuk (Bar)", "Çizgi (Line)", "Alan (Area)"])
     
-    # Renk Temalarını Tanımlama
     if secilen_tema == "Kurumsal (Mavi & Turkuaz)":
         renk_paleti_1, renk_paleti_2 = 'Blues', 'Teal'
         zaman_renkleri = px.colors.qualitative.Set1
@@ -82,7 +144,7 @@ if st.session_state['giris_yapildi']:
             
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
             
-            # Doğru karar: Tekrar ISO Calendar (Yılın Haftası) mantığına dönüldü
+            # ISO Calendar Mantığı (Hatasız Yıl/Hafta)
             df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
             df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
             
@@ -104,24 +166,20 @@ if st.session_state['giris_yapildi']:
     df_ham = veri_getir()
 
     if not df_ham.empty:
-        # Ayların kronolojik sıralaması
         ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
         
         # --- FİLTRELER (AY VE HAFTA) ---
         st.sidebar.header("🔍 Veri Filtreleri")
         
-        # Ayları mantıksal sıraya sokma
         mevcut_aylar = df_ham['Ay'].dropna().unique().tolist()
         mevcut_aylar = sorted(mevcut_aylar, key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
         
-        # Haftaları sayısal sıraya sokma (Örn: 2, 3, 4, 5...)
         mevcut_haftalar = sorted(df_ham['Hafta Numarası'].dropna().unique().tolist())
         hafta_sirasi = [f"{h}. Hafta" for h in mevcut_haftalar]
         
         secilen_aylar = st.sidebar.multiselect("İncelenecek Ayları Seçin:", mevcut_aylar, default=mevcut_aylar)
         secilen_haftalar = st.sidebar.multiselect("İncelenecek Haftaları Seçin:", hafta_sirasi, default=hafta_sirasi)
         
-        # Filtreleri Uygulama
         df = df_ham.copy()
         if secilen_aylar:
             df = df[df['Ay'].isin(secilen_aylar)]
@@ -169,7 +227,7 @@ if st.session_state['giris_yapildi']:
                 fig_gelen = px.bar(kurum_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi',
                                    orientation='h', title='En Çok Numune GÖNDEREN Kurumlar',
                                    text_auto=True, color='Gelen Numune Sayısı', color_continuous_scale=renk_paleti_1)
-                fig_gelen.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
+                fig_gelen.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                 st.plotly_chart(fig_gelen, use_container_width=True)
                 
             with k2:
@@ -180,7 +238,7 @@ if st.session_state['giris_yapildi']:
                 fig_islenen = px.bar(kurum_islenen, x='Numune adedi (işlenen numune)', y='Kurum/Numune Sahibi',
                                      orientation='h', title='En Çok Test İŞLENEN Kurumlar',
                                      text_auto=True, color='Numune adedi (işlenen numune)', color_continuous_scale=renk_paleti_2)
-                fig_islenen.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
+                fig_islenen.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                 st.plotly_chart(fig_islenen, use_container_width=True)
 
             st.divider()
@@ -204,6 +262,7 @@ if st.session_state['giris_yapildi']:
                                     category_orders=siralama_ayari,
                                     color_discrete_sequence=zaman_renkleri)
                 
+            fig_zaman.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_zaman, use_container_width=True)
             
             st.divider()
@@ -217,6 +276,7 @@ if st.session_state['giris_yapildi']:
             fig_testler = px.funnel(test_ozet, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)',
                                     title='En Çok Çalışılan Hastalık/Test Panelleri (İlk 10)',
                                     color_discrete_sequence=zaman_renkleri)
+            fig_testler.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_testler, use_container_width=True)
 
             # Footer
