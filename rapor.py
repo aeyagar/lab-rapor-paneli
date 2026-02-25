@@ -5,7 +5,6 @@ import datetime
 import os
 
 # --- SAYFA AYARLARI ---
-# Tarayıcı sekmesindeki ikonu inek (🐄) yaptık
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
 # --- OTURUM (SESSION) YÖNETİMİ ---
@@ -38,24 +37,58 @@ if not st.session_state['giris_yapildi']:
 # --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
     
-    # --- SOL MENÜ ---
+    # --- SOL MENÜ GÖRSELLERİ ---
     if os.path.exists("logo.png"):
         st.sidebar.image("logo.png", use_container_width=True)
         st.sidebar.divider()
     
-    # Yan menüye isteğe bağlı Ruminant figürü/fotoğrafı ekleme alanı
     if os.path.exists("ruminant.png"):
         st.sidebar.image("ruminant.png", use_container_width=True, caption="Ruminant Sağlığı Merkezi")
         st.sidebar.divider()
-        
+
+    # --- KULLANICI GÖRÜNÜM AYARLARI ---
+    st.sidebar.header("🎨 Görünüm Ayarları")
+    secilen_tema = st.sidebar.selectbox("Grafik Renk Teması", ["Kurumsal (Mavi & Turkuaz)", "Sıcak (Kırmızı & Turuncu)", "Doğa (Yeşil Tonları)", "Canlı (Pastel & Karışık)"])
+    grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Tarzı", ["Çubuk (Bar)", "Çizgi (Line)", "Alan (Area)"])
+    
+    # Renk Temalarını Tanımlama
+    if secilen_tema == "Kurumsal (Mavi & Turkuaz)":
+        renk_paleti_1, renk_paleti_2 = 'Blues', 'Teal'
+        zaman_renkleri = px.colors.qualitative.Set1
+    elif secilen_tema == "Sıcak (Kırmızı & Turuncu)":
+        renk_paleti_1, renk_paleti_2 = 'Reds', 'Oranges'
+        zaman_renkleri = px.colors.qualitative.Vivid
+    elif secilen_tema == "Doğa (Yeşil Tonları)":
+        renk_paleti_1, renk_paleti_2 = 'Greens', 'YlGn'
+        zaman_renkleri = px.colors.qualitative.Pastel
+    else:
+        renk_paleti_1, renk_paleti_2 = 'Plasma', 'Viridis'
+        zaman_renkleri = px.colors.qualitative.Plotly
+
+    st.sidebar.divider()
+    
     st.sidebar.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
     st.sidebar.divider()
 
-    # BAŞLIKLAR VE İKONLAR RUMİNANT TEMASINA UYARLANDI
     st.title("🐄 DİAGEN Veteriner LAB Rapor İzleme Paneli")
     st.markdown("Büyükbaş ve küçükbaş numune akışını, kurum performanslarını ve test yoğunluklarını analiz edin.")
 
-    # --- VERİ YÜKLEME VE TEMİZLEME ---
+    # --- HAFTA HESAPLAMA FONKSİYONU ---
+    def ayin_haftasini_hesapla(tarih):
+        if pd.isnull(tarih): return 1
+        ilk_gun = tarih.replace(day=1)
+        ilk_hafta = ilk_gun.isocalendar().week
+        gecerli_hafta = tarih.isocalendar().week
+        
+        # Yıl geçişlerindeki 52/53. hafta sorununu çözme
+        if ilk_hafta > 50 and gecerli_hafta < 10:
+            ilk_hafta = 0
+            
+        hafta_no = gecerli_hafta - ilk_hafta + 1
+        # Her ayı 4 hafta say (5. haftaya sarkanları 4'e ekle)
+        return min(hafta_no, 4)
+
+    # --- VERİ YÜKLEME ---
     @st.cache_data(ttl=60)
     def veri_getir():
         try:
@@ -63,7 +96,9 @@ if st.session_state['giris_yapildi']:
             df.columns = df.columns.str.strip()
             
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
-            df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
+            
+            # Kendi yazdığımız özel hafta hesaplayıcıyı uyguluyoruz
+            df['Hafta Numarası'] = df['Test tarihi'].apply(ayin_haftasini_hesapla)
             
             ay_sozlugu = {
                 1: 'Ocak', 2: 'Şubat', 3: 'Mart', 4: 'Nisan', 
@@ -83,9 +118,8 @@ if st.session_state['giris_yapildi']:
     df_ham = veri_getir()
 
     if not df_ham.empty:
-        # --- YAN MENÜ (FİLTRELER) ---
-        st.sidebar.header("🔍 Filtreleme Seçenekleri")
-        
+        # --- FİLTRELER ---
+        st.sidebar.header("🔍 Veri Filtreleri")
         mevcut_aylar = df_ham['Ay'].dropna().unique().tolist()
         secilen_aylar = st.sidebar.multiselect("İncelenecek Ayları Seçin:", mevcut_aylar, default=mevcut_aylar)
         
@@ -109,7 +143,7 @@ if st.session_state['giris_yapildi']:
             i1.info(f"📅 **En Yoğun Ay:**\n\n {en_yogun_ay} ayında sürü taramaları ve testler zirve yaptı.")
             i2.success(f"🏢 **En Çok Numune Gönderen:**\n\n {en_cok_is_yapan_kurum}")
             i3.warning(f"🔬 **En Popüler Test:**\n\n {en_populer_test} paneli en çok çalışılan işlem oldu.")
-            i4.error(f"🔥 **Zirve Yapan Hafta:**\n\n Yılın {en_yogun_hafta}. Haftası laboratuvarda en çok mesai harcanan hafta oldu.")
+            i4.error(f"🔥 **Zirve Yapan Hafta:**\n\n Her ayın genel {en_yogun_hafta}. Haftası laboratuvarın en yoğun zamanıdır.")
             
             st.divider()
 
@@ -136,7 +170,7 @@ if st.session_state['giris_yapildi']:
                 
                 fig_gelen = px.bar(kurum_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi',
                                    orientation='h', title='En Çok Numune GÖNDEREN Kurumlar',
-                                   text_auto=True, color='Gelen Numune Sayısı', color_continuous_scale='Blues')
+                                   text_auto=True, color='Gelen Numune Sayısı', color_continuous_scale=renk_paleti_1)
                 fig_gelen.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
                 st.plotly_chart(fig_gelen, use_container_width=True)
                 
@@ -147,7 +181,7 @@ if st.session_state['giris_yapildi']:
                 
                 fig_islenen = px.bar(kurum_islenen, x='Numune adedi (işlenen numune)', y='Kurum/Numune Sahibi',
                                      orientation='h', title='En Çok Test İŞLENEN Kurumlar',
-                                     text_auto=True, color='Numune adedi (işlenen numune)', color_continuous_scale='Teal')
+                                     text_auto=True, color='Numune adedi (işlenen numune)', color_continuous_scale=renk_paleti_2)
                 fig_islenen.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
                 st.plotly_chart(fig_islenen, use_container_width=True)
 
@@ -161,9 +195,20 @@ if st.session_state['giris_yapildi']:
                 haftalik_aylik = df.groupby(['Ay', 'Hafta Numarası'])['Numune adedi (işlenen numune)'].sum().reset_index()
                 haftalik_aylik['Hafta Metni'] = haftalik_aylik['Hafta Numarası'].astype(str) + ". Hafta"
                 
-                fig_zaman = px.bar(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
-                                   title='Aylara Göre Haftalık Test Yoğunluğu', text_auto=True,
-                                   barmode='group')
+                # Kullanıcının Seçtiği Grafik Tarzına Göre Çizim Yapma
+                if grafik_tarzi == "Çubuk (Bar)":
+                    fig_zaman = px.bar(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
+                                       title='Aylara Göre Haftalık Test Yoğunluğu', text_auto=True, barmode='group',
+                                       color_discrete_sequence=zaman_renkleri)
+                elif grafik_tarzi == "Çizgi (Line)":
+                    fig_zaman = px.line(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
+                                        title='Aylara Göre Haftalık Test Yoğunluğu', markers=True,
+                                        color_discrete_sequence=zaman_renkleri)
+                else:
+                    fig_zaman = px.area(haftalik_aylik, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni',
+                                        title='Aylara Göre Haftalık Test Yoğunluğu',
+                                        color_discrete_sequence=zaman_renkleri)
+                    
                 st.plotly_chart(fig_zaman, use_container_width=True)
                 
             with z2:
@@ -171,7 +216,8 @@ if st.session_state['giris_yapildi']:
                 test_ozet = test_ozet.sort_values(by='Numune adedi (işlenen numune)', ascending=False).head(10)
                 
                 fig_testler = px.funnel(test_ozet, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)',
-                                        title='🐑 En Çok Çalışılan Hastalık/Test Panelleri')
+                                        title='🐑 En Çok Çalışılan Hastalık/Test Panelleri',
+                                        color_discrete_sequence=zaman_renkleri)
                 st.plotly_chart(fig_testler, use_container_width=True)
 
             st.caption("Veriler 'veri.xlsx' dosyasından anlık olarak beslenmektedir. Son güncelleme: " + datetime.datetime.now().strftime("%H:%M:%S"))
