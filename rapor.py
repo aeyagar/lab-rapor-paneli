@@ -9,13 +9,13 @@ import os
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
-# --- 🎨 KURUMSAL TASARIM VE ÇERÇEVELER (CSS) ---
+# --- 🎨 KURUMSAL LACİVERT TASARIM VE ÇERÇEVELER (CSS) ---
 st.markdown("""
 <style>
-    /* Ana Başlık Kutusu */
+    /* Ana Başlık Kutusu - Logodaki Koyu Mavi Çerçeve */
     .ana-baslik-kutusu {
         background-color: #ffffff;
-        border: 4px solid #2e956e;
+        border: 4px solid #1a4a7c; /* Kurumsal Koyu Mavi */
         padding: 20px;
         border-radius: 15px;
         text-align: center;
@@ -23,15 +23,15 @@ st.markdown("""
         box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
     }
     .ana-baslik-yazisi {
-        color: #1e2125;
+        color: #1a4a7c;
         font-size: 38px !important;
         font-weight: 900 !important;
         margin: 0;
     }
-    /* Metrik Kare Balonlar */
+    /* Metrik Kare Balonlar - Koyu Mavi Vurgu */
     [data-testid="stMetric"] {
         background-color: #ffffff;
-        border: 3px solid #2e956e !important;
+        border: 3px solid #1a4a7c !important;
         padding: 20px !important;
         border-radius: 20px !important;
         box-shadow: 6px 6px 20px rgba(0,0,0,0.1) !important;
@@ -42,16 +42,16 @@ st.markdown("""
         font-size: 1.3rem !important;
     }
     div[data-testid="stMetricValue"] > div {
-        color: #2e956e !important;
+        color: #1a4a7c !important;
         font-weight: 900 !important;
         font-size: 2.5rem !important;
     }
-    /* Sol Menü Kutucukları */
+    /* Sol Menü Kutucukları - Koyu Mavi Çerçeve */
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
         background-color: #ffffff !important;
-        border: 2px solid #2e956e !important;
+        border: 2px solid #1a4a7c !important;
         padding: 15px !important;
         border-radius: 12px !important;
         margin-bottom: 15px !important;
@@ -96,20 +96,20 @@ if st.session_state['giris_yapildi']:
     # Üst Başlık
     st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
-    # Sidebar Logo ve Alt Yazısı
+    # Sidebar Logo ve Alt Yazısı - Yazı Maviye Döndü
     if os.path.exists("logo.png"): 
         st.sidebar.image("logo.png", use_container_width=True)
-        st.sidebar.markdown("<p style='text-align: center; font-weight: 800; color: #2e956e;'>Veteriner Teşhis ve Analiz Laboratuvarı</p>", unsafe_allow_html=True)
+        st.sidebar.markdown("<p style='text-align: center; font-weight: 800; color: #1a4a7c;'>Veteriner Teşhis ve Analiz Laboratuvarı</p>", unsafe_allow_html=True)
         st.sidebar.divider()
     
     # Görünüm Ayarları
     st.sidebar.markdown("### ⚙️ Görünüm Ayarları")
     grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Seçeneği:", ["📈 Çubuk (Bar)", "🍕 Pasta (Ay Bazlı)"])
-    secilen_renk = st.sidebar.selectbox("Grafik Renk Paleti:", ["Canlı Yeşil", "Kurumsal Mavi", "Sıcak Turuncu", "Renkli"])
+    secilen_renk = st.sidebar.selectbox("Grafik Renk Paleti:", ["Kurumsal Mavi", "Canlı Yeşil", "Sıcak Turuncu", "Renkli"])
     
     renk_ayarlari = {
-        "Canlı Yeşil": {"skala": "Greens", "liste": px.colors.qualitative.Dark2},
         "Kurumsal Mavi": {"skala": "Blues", "liste": px.colors.qualitative.Pastel1},
+        "Canlı Yeşil": {"skala": "Greens", "liste": px.colors.qualitative.Dark2},
         "Sıcak Turuncu": {"skala": "Oranges", "liste": px.colors.qualitative.Vivid},
         "Renkli": {"skala": "Viridis", "liste": px.colors.qualitative.Prism}
     }
