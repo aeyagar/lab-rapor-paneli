@@ -27,9 +27,9 @@ def veri_getir():
         
         return df
     except Exception as e:
-        st.error("Excel dosyası okunurken hata oluştu. Lütfen 'veri.xlsx' dosyanızın aynı klasörde olduğundan emin olun.")
-        return pd.DataFrame()
-
+    st.error(f"SİSTEMİN GERÇEK HATASI: {e}")
+    return pd.DataFrame()
+    
 df_ham = veri_getir()
 
 if not df_ham.empty:
@@ -133,4 +133,5 @@ if not df_ham.empty:
             st.plotly_chart(fig_testler, use_container_width=True)
 
         # Alt Bilgi
+
         st.caption("Veriler 'veri.xlsx' dosyasından anlık olarak beslenmektedir. Son güncelleme: " + datetime.datetime.now().strftime("%H:%M:%S"))
