@@ -9,63 +9,67 @@ import os
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
-# --- 🎨 KURUMSAL LACİVERT TASARIM VE ÇERÇEVELER (CSS) ---
+# --- 🎨 KURUMSAL LACİVERT TASARIM VE AKILLI RENK CSS ---
 st.markdown("""
 <style>
-    /* Ana Başlık Kutusu - Logodaki Koyu Mavi Çerçeve */
+    /* Ana Başlık Kutusu */
     .ana-baslik-kutusu {
-        background-color: #ffffff;
-        border: 4px solid #1a4a7c; /* Kurumsal Koyu Mavi */
+        background-color: transparent; /* Arka plana uyum sağlaması için */
+        border: 4px solid #1a4a7c;
         padding: 20px;
         border-radius: 15px;
         text-align: center;
         margin-bottom: 30px;
         box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
     }
+    
+    /* KARANLIK MODDA BAŞLIĞI GÖRÜNÜR YAPAN ÖZEL KOMUT */
     .ana-baslik-yazisi {
-        color: #1a4a7c;
+        color: #1a4a7c; /* Varsayılan kurumsal mavi */
         font-size: 38px !important;
         font-weight: 900 !important;
         margin: 0;
     }
-    /* Metrik Kare Balonlar - Koyu Mavi Vurgu */
+    
+    /* Eğer kullanıcı karanlık mod kullanıyorsa yazı rengini beyaza yakın yap */
+    @media (prefers-color-scheme: dark) {
+        .ana-baslik-yazisi {
+            color: #e2e8f0 !important;
+        }
+        .ana-baslik-kutusu {
+            border-color: #3b82f6; /* Koyu modda çerçeve biraz daha parlak mavi olsun */
+        }
+    }
+
+    /* Metrik Kare Balonlar */
     [data-testid="stMetric"] {
-        background-color: #ffffff;
         border: 3px solid #1a4a7c !important;
         padding: 20px !important;
         border-radius: 20px !important;
         box-shadow: 6px 6px 20px rgba(0,0,0,0.1) !important;
     }
-    div[data-testid="stMetricLabel"] > div {
-        color: #1e2125 !important;
-        font-weight: 800 !important;
-        font-size: 1.3rem !important;
-    }
+    
+    /* Metrik Değerleri */
     div[data-testid="stMetricValue"] > div {
         color: #1a4a7c !important;
         font-weight: 900 !important;
-        font-size: 2.5rem !important;
     }
-    /* Sol Menü Kutucukları - Koyu Mavi Çerçeve */
+    
+    /* Sol Menü Kutucukları */
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
-        background-color: #ffffff !important;
         border: 2px solid #1a4a7c !important;
         padding: 15px !important;
         border-radius: 12px !important;
         margin-bottom: 15px !important;
     }
-    [data-testid="stSidebar"] label p {
-        font-weight: 900 !important;
-        color: #1e2125 !important;
-    }
+
     /* İmza Alanı Stil */
     .imza-alani {
         text-align: right;
         font-family: 'Courier New', Courier, monospace;
         font-weight: bold;
-        color: #1e2125;
         padding-top: 10px;
     }
 </style>
@@ -93,10 +97,9 @@ if not st.session_state['giris_yapildi']:
 # --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
     
-    # Üst Başlık
+    # Akıllı Renkli Üst Başlık
     st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
-    # Sidebar Logo ve Alt Yazısı - Yazı Maviye Döndü
     if os.path.exists("logo.png"): 
         st.sidebar.image("logo.png", use_container_width=True)
         st.sidebar.markdown("<p style='text-align: center; font-weight: 800; color: #1a4a7c;'>Veteriner Teşhis ve Analiz Laboratuvarı</p>", unsafe_allow_html=True)
@@ -163,8 +166,8 @@ if st.session_state['giris_yapildi']:
         m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
         fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
                       title='Müşteri Bazlı Numune Girişi (İlk 15)', color='Gelen Numune Sayısı', 
-                      color_continuous_scale=guncel_skala, text_auto='.0f')
-        fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
+                      color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+        fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=600, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig1, use_container_width=True)
 
         st.divider()
@@ -172,8 +175,8 @@ if st.session_state['giris_yapildi']:
         m_islenen = df.groupby('Kurum/Numune Sahibi')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(15)
         fig2 = px.bar(m_islenen, x='Numune adedi (işlenen numune)', y='Kurum/Numune Sahibi', orientation='h', 
                       title='Müşterilere Göre İşlenen Test Adedi (İlk 15)', color='Numune adedi (işlenen numune)', 
-                      color_continuous_scale=guncel_skala, text_auto='.0f')
-        fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
+                      color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+        fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=600, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig2, use_container_width=True)
 
         st.divider()
@@ -183,8 +186,9 @@ if st.session_state['giris_yapildi']:
             haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['Numune adedi (işlenen numune)'].sum().reset_index()
             fig_zaman = px.bar(haftalik_veri, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni', 
                                barmode='group', title='Aylık/Haftalık İşlem Hacmi', text_auto='.0f',
-                               category_orders={'Ay': ay_sirasi}, color_discrete_sequence=guncel_liste)
-            fig_zaman.update_layout(height=550)
+                               category_orders={'Ay': ay_sirasi}, color_discrete_sequence=guncel_liste,
+                               template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+            fig_zaman.update_layout(height=550, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_zaman, use_container_width=True)
         else:
             secili_aylar_liste = sorted(df['Ay'].unique().tolist(), key=lambda x: ay_sirasi.index(x))
@@ -194,15 +198,16 @@ if st.session_state['giris_yapildi']:
             for i, ay in enumerate(secili_aylar_liste):
                 ay_verisi = df[df['Ay'] == ay].groupby('Hafta Metni')['Numune adedi (işlenen numune)'].sum().reset_index()
                 fig_donut.add_trace(go.Pie(labels=ay_verisi['Hafta Metni'], values=ay_verisi['Numune adedi (işlenen numune)'], name=ay, hole=0.4), row=(i//num_cols)+1, col=(i%num_cols)+1)
-            fig_donut.update_layout(height=450*num_rows, colorway=guncel_liste)
+            fig_donut.update_layout(height=450*num_rows, colorway=guncel_liste, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
             st.plotly_chart(fig_donut, use_container_width=True)
 
         st.divider()
 
         test_dagilimi = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(20)
         fig_test = px.funnel(test_dagilimi, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)', 
-                             title='En Çok Çalışılan Test Panelleri (İlk 20)', color_discrete_sequence=guncel_liste)
-        fig_test.update_layout(height=800)
+                             title='En Çok Çalışılan Test Panelleri (İlk 20)', color_discrete_sequence=guncel_liste,
+                             template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+        fig_test.update_layout(height=800, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_test, use_container_width=True)
 
         st.caption(f"⚙️ Son Güncelleme: {datetime.datetime.now().strftime('%H:%M:%S')}")
