@@ -9,10 +9,9 @@ import os
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
-# --- 🎨 ÖZEL ESTETİK ÇERÇEVE VE KALIN YAZI TASARIMI (CSS) ---
+# --- 🎨 ÖZEL ESTETİK TASARIM (CSS) ---
 st.markdown("""
 <style>
-    /* 1. ANA BAŞLIK ÇERÇEVESİ */
     .ana-baslik-kutusu {
         background-color: #ffffff;
         border: 4px solid #2e956e;
@@ -24,23 +23,17 @@ st.markdown("""
     }
     .ana-baslik-yazisi {
         color: #1e2125;
-        font-size: 40px !important;
+        font-size: 38px !important;
         font-weight: 900 !important;
         margin: 0;
     }
-
-    /* 2. Üst Bar Kare Balon Metrikler */
     [data-testid="stMetric"] {
         background-color: #ffffff;
-        border: 3px solid #2e956e !important; /* Kesin çerçeve */
+        border: 3px solid #2e956e !important;
         padding: 20px !important;
         border-radius: 20px !important;
         box-shadow: 6px 6px 20px rgba(0,0,0,0.1) !important;
-        display: block;
-        width: 100%;
     }
-    
-    /* Metrik İçindeki Yazıların Kalınlığı */
     div[data-testid="stMetricLabel"] > div {
         color: #1e2125 !important;
         font-weight: 800 !important;
@@ -51,13 +44,6 @@ st.markdown("""
         font-weight: 900 !important;
         font-size: 2.5rem !important;
     }
-
-    /* 3. Sol Menü (Sidebar) Çerçeveleri */
-    [data-testid="stSidebar"] {
-        background-color: #f1f3f5;
-    }
-    
-    /* Sidebar elemanlarını kutu içine al */
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
@@ -67,8 +53,6 @@ st.markdown("""
         border-radius: 12px !important;
         margin-bottom: 15px !important;
     }
-
-    /* Sol taraf kalın yazılar */
     [data-testid="stSidebar"] label p {
         font-weight: 900 !important;
         color: #1e2125 !important;
@@ -98,23 +82,24 @@ if not st.session_state['giris_yapildi']:
 # --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
     
-    # ANA BAŞLIK (ÇERÇEVELİ)
-    st.markdown("""
-        <div class="ana-baslik-kutusu">
-            <h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
     if os.path.exists("logo.png"): st.sidebar.image("logo.png", use_container_width=True)
     
-    # SOL TARAF AYARLAR
+    # --- RENK YÖNETİMİ ---
     st.sidebar.markdown("### ⚙️ Görünüm Ayarları")
     grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Seçeneği:", ["📈 Çubuk (Bar)", "🍕 Pasta (Ay Bazlı)"])
-    secilen_renk = st.sidebar.selectbox("Grafik Renk Paleti:", ["Canlı Yeşil", "Kurumsal Mavi", "Pastel", "Renkli"])
+    secilen_renk = st.sidebar.selectbox("Grafik Renk Paleti:", ["Canlı Yeşil", "Kurumsal Mavi", "Sıcak Turuncu", "Renkli"])
     
-    renk_map = {"Pastel": px.colors.qualitative.Pastel, "Kurumsal Mavi": px.colors.sequential.Blues_r,
-                "Canlı Yeşil": px.colors.sequential.Greens_r, "Renkli": px.colors.qualitative.Prism}
-    renk_paleti = renk_map[secilen_renk]
+    # Tüm grafiklerde kullanılacak ortak renk haritası
+    renk_ayarlari = {
+        "Canlı Yeşil": {"skala": "Greens", "liste": px.colors.qualitative.Dark2},
+        "Kurumsal Mavi": {"skala": "Blues", "liste": px.colors.qualitative.Pastel1},
+        "Sıcak Turuncu": {"skala": "Oranges", "liste": px.colors.qualitative.Vivid},
+        "Renkli": {"skala": "Viridis", "liste": px.colors.qualitative.Prism}
+    }
+    guncel_skala = renk_ayarlari[secilen_renk]["skala"]
+    guncel_liste = renk_ayarlari[secilen_renk]["liste"]
 
     # --- VERİ YÜKLEME ---
     @st.cache_data(ttl=60)
@@ -138,18 +123,15 @@ if st.session_state['giris_yapildi']:
 
     if not df_ham.empty:
         ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
-        
-        # SOL TARAF FİLTRELER
         st.sidebar.markdown("### 📅 Filtreler")
         mevcut_aylar = sorted(df_ham['Ay'].dropna().unique().tolist(), key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
         secilen_aylar = st.sidebar.multiselect("Görmek İstediğiniz Aylar:", mevcut_aylar, default=mevcut_aylar)
-        
         df = df_ham[df_ham['Ay'].isin(secilen_aylar)] if secilen_aylar else df_ham
         
         st.sidebar.divider()
         st.sidebar.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
 
-        # --- ÜST BAR - KARE BALON METRİKLER ---
+        # --- METRİKLER ---
         m1, m2, m3 = st.columns(3)
         m1.metric("🐄 Toplam Gelen Numune", f"{int(df['Gelen Numune Sayısı'].sum()):,.0f} Adet")
         m2.metric("🧪 İşlenen Test Adedi", f"{int(df['Numune adedi (işlenen numune)'].sum()):,.0f} Adet")
@@ -157,13 +139,12 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- GRAFİKLER (TAM GENİŞLİK) ---
+        # --- 1. MÜŞTERİ ANALİZİ (RENK PALETİNE BAĞLANDI) ---
         m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
         fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
                       title='Müşteri Bazlı Numune Girişi (İlk 15)', color='Gelen Numune Sayısı', 
-                      color_continuous_scale='Greens', text_auto='.0f')
+                      color_continuous_scale=guncel_skala, text_auto='.0f')
         fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
-        fig1.update_traces(textfont_size=15, textposition="outside")
         st.plotly_chart(fig1, use_container_width=True)
 
         st.divider()
@@ -171,18 +152,19 @@ if st.session_state['giris_yapildi']:
         m_islenen = df.groupby('Kurum/Numune Sahibi')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(15)
         fig2 = px.bar(m_islenen, x='Numune adedi (işlenen numune)', y='Kurum/Numune Sahibi', orientation='h', 
                       title='Müşterilere Göre İşlenen Test Adedi (İlk 15)', color='Numune adedi (işlenen numune)', 
-                      color_continuous_scale='Teal', text_auto='.0f')
+                      color_continuous_scale=guncel_skala, text_auto='.0f')
         fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
-        fig2.update_traces(textfont_size=15, textposition="outside")
         st.plotly_chart(fig2, use_container_width=True)
 
         st.divider()
 
+        # --- 2. ZAMAN ANALİZİ (RENK PALETİNE BAĞLANDI) ---
+        st.subheader("⏳ Dönemsel Yoğunluk Analizi")
         if grafik_tarzi == "📈 Çubuk (Bar)":
             haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['Numune adedi (işlenen numune)'].sum().reset_index()
             fig_zaman = px.bar(haftalik_veri, x='Ay', y='Numune adedi (işlenen numune)', color='Hafta Metni', 
                                barmode='group', title='Aylık/Haftalık İşlem Hacmi', text_auto='.0f',
-                               category_orders={'Ay': ay_sirasi}, color_discrete_sequence=renk_paleti)
+                               category_orders={'Ay': ay_sirasi}, color_discrete_sequence=guncel_liste)
             fig_zaman.update_layout(height=550)
             st.plotly_chart(fig_zaman, use_container_width=True)
         else:
@@ -193,13 +175,15 @@ if st.session_state['giris_yapildi']:
             for i, ay in enumerate(secili_aylar_liste):
                 ay_verisi = df[df['Ay'] == ay].groupby('Hafta Metni')['Numune adedi (işlenen numune)'].sum().reset_index()
                 fig_donut.add_trace(go.Pie(labels=ay_verisi['Hafta Metni'], values=ay_verisi['Numune adedi (işlenen numune)'], name=ay, hole=0.4), row=(i//num_cols)+1, col=(i%num_cols)+1)
-            fig_donut.update_layout(height=450*num_rows)
+            fig_donut.update_layout(height=450*num_rows, colorway=guncel_liste)
             st.plotly_chart(fig_donut, use_container_width=True)
 
         st.divider()
 
+        # --- 3. TEST FUNNEL (RENK PALETİNE BAĞLANDI) ---
         test_dagilimi = df.groupby('Test (MARKA ve PARAMETRE)')['Numune adedi (işlenen numune)'].sum().reset_index().sort_values('Numune adedi (işlenen numune)', ascending=False).head(20)
-        fig_test = px.funnel(test_dagilimi, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)', title='En Çok Çalışılan Test Panelleri (İlk 20)')
+        fig_test = px.funnel(test_dagilimi, x='Numune adedi (işlenen numune)', y='Test (MARKA ve PARAMETRE)', 
+                             title='En Çok Çalışılan Test Panelleri (İlk 20)', color_discrete_sequence=guncel_liste)
         fig_test.update_layout(height=800)
         st.plotly_chart(fig_test, use_container_width=True)
 
