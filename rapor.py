@@ -105,16 +105,32 @@ if st.session_state['giris_yapildi']:
     guncel_liste = renk_ayarlari[secilen_renk]["liste"]
 
     # --- GOOGLE SHEETS CANLI VERİ BAĞLANTISI ---
-    @st.cache_data(ttl=15) # 15 saniyede bir Google Sheets'i günceller
+    @st.cache_data(ttl=15)
     def veri_getir():
         try:
-            # Sizin E-Tablo linkiniz tırnak içinde ve güvenli bir şekilde buraya eklendi
             sheet_url = "https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing"
-            
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
-            df.columns = df.columns.str.strip()
             
+            # Eğer erişim kapalıysa (Google Giriş sayfasına atıyorsa) uyar
+            if len(df.columns) == 1 and 'html' in str(df.columns[0]).lower():
+                st.error("🚨 Google E-Tablonuz 'Kısıtlı' modda! Lütfen sağ üstteki Paylaş butonundan erişimi 'Bağlantıya sahip olan herkes görüntüleyebilir' yapın.")
+                return pd.DataFrame()
+                
+            # Sütun başlıklarındaki fazla boşlukları ve alt satıra geçmeleri (Enter) temizle
+            df.columns = df.columns.str.strip().str.replace('\n', ' ')
+            
+            # --- AKILLI HATA TESPİT SİSTEMİ ---
+            beklenen_sutunlar = ['Test tarihi', 'Gelen Numune Sayısı', 'İşlenen Numune Sayısı', 'Kurum/Numune Sahibi']
+            eksikler = [s for s in beklenen_sutunlar if s not in df.columns]
+            
+            if eksikler:
+                st.error(f"🚨 Kodun Çökmesi Engellendi! E-Tablonuzda şu başlıklar hatalı veya eksik: **{', '.join(eksikler)}**")
+                st.info(f"💡 Tablonuzdaki mevcut başlıklar şunlar: **{', '.join(df.columns)}**")
+                st.warning("Lütfen Google E-Tablonuzun 1. satırındaki başlıkları yukarıdaki isimlerle birebir aynı olacak şekilde düzeltin.")
+                return pd.DataFrame()
+
+            # Verileri dönüştür
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
             df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
             df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
@@ -122,20 +138,26 @@ if st.session_state['giris_yapildi']:
                           7:'Temmuz', 8:'Ağustos', 9:'Eylül', 10:'Ekim', 11:'Kasım', 12:'Aralık'}
             df['Ay'] = df['Test tarihi'].dt.month.map(ay_sozlugu)
             
-            # Yeni Parametreleri Sayısal Formata Çevirme
             df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
             df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
-            df['Fatura Tutarı(KDV HARİÇ)'] = pd.to_numeric(df['Fatura Tutarı(KDV HARİÇ)'], errors='coerce').fillna(0)
             
-            # NaN (Boş) metin değerlerini temizleme
+            if 'Fatura Tutarı(KDV HARİÇ)' in df.columns:
+                df['Fatura Tutarı(KDV HARİÇ)'] = pd.to_numeric(df['Fatura Tutarı(KDV HARİÇ)'], errors='coerce').fillna(0)
+            
             if 'Tahsilat Durumu' in df.columns:
                 df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
+            
             if 'Numunenin Geldiği Şehir' in df.columns:
                 df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].fillna('Bilinmiyor')
+            elif 'Numunenin Geldiği Şehir' not in df.columns and any("Şehir" in c for c in df.columns):
+                # Olası Şehir sütunu tespiti
+                olasi_sehir = [c for c in df.columns if "Şehir" in c][0]
+                df['Numunenin Geldiği Şehir'] = df[olasi_sehir].fillna('Bilinmiyor')
             
             return df
         except Exception as e:
-            st.error(f"Veri çekme hatası: {e}"); return pd.DataFrame()
+            st.error(f"Beklenmeyen bir veri formatı hatası: {e}")
+            return pd.DataFrame()
 
     df_ham = veri_getir()
 
@@ -159,11 +181,9 @@ if st.session_state['giris_yapildi']:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Finans ve Lokasyon Metrikleri
         f1, f2, f3 = st.columns(3)
-        toplam_ciro = df['Fatura Tutarı(KDV HARİÇ)'].sum()
+        toplam_ciro = df['Fatura Tutarı(KDV HARİÇ)'].sum() if 'Fatura Tutarı(KDV HARİÇ)' in df.columns else 0
         
-        # 'Ödenmedi' ibaresi geçenleri bulup tahsilat hesaplama
         if 'Tahsilat Durumu' in df.columns:
             bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı(KDV HARİÇ)'].sum()
         else:
@@ -202,7 +222,6 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- MÜŞTERİ ANALİZLERİ ---
         st.subheader("🏢 Müşteri Performans Analizleri")
         m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
         fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
@@ -220,7 +239,6 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- ZAMAN ANALİZİ ---
         st.subheader("⏳ Dönemsel Yoğunluk Analizi")
         if grafik_tarzi == "📈 Çubuk (Bar)":
             haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['İşlenen Numune Sayısı'].sum().reset_index()
@@ -243,7 +261,6 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- TEST DAĞILIMI (GÜNCELLENEN BAŞLIK: Yapılan Test) ---
         if 'Yapılan Test' in df.columns:
             test_dagilimi = df.groupby('Yapılan Test')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False).head(20)
             fig_test = px.funnel(test_dagilimi, x='İşlenen Numune Sayısı', y='Yapılan Test', 
