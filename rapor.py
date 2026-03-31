@@ -5,7 +5,6 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import datetime
 import os
-import re
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
@@ -13,7 +12,6 @@ st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", 
 # --- 🎨 KURUMSAL LACİVERT TASARIM VE AKILLI RENK CSS ---
 st.markdown("""
 <style>
-    /* Ana Başlık Kutusu */
     .ana-baslik-kutusu {
         background-color: transparent;
         border: 4px solid #1a4a7c;
@@ -29,8 +27,6 @@ st.markdown("""
         font-weight: 900 !important;
         margin: 0;
     }
-    
-    /* Metrik Kare Balonlar */
     [data-testid="stMetric"] {
         background-color: transparent;
         border: 3px solid #1a4a7c !important;
@@ -42,13 +38,11 @@ st.markdown("""
         color: #1a4a7c !important;
         font-weight: 900 !important;
     }
-    
-    /* --- SOL MENÜ (SIDEBAR) KESİN OKUNABİLİRLİK ÇÖZÜMÜ --- */
     [data-testid="stSidebar"] {
-        background-color: #f8f9fa !important; /* Aydınlık mod için açık gri arka plan */
+        background-color: #f8f9fa !important;
     }
     [data-testid="stSidebar"] * {
-        color: #1e2125 !important; /* Aydınlık mod için koyu antrasit yazılar */
+        color: #1e2125 !important;
     }
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
@@ -59,8 +53,6 @@ st.markdown("""
         border-radius: 12px !important;
         margin-bottom: 15px !important;
     }
-
-    /* İmza Alanı ve Logo Altı */
     .imza-alani {
         text-align: right;
         font-family: 'Courier New', Courier, monospace;
@@ -71,23 +63,20 @@ st.markdown("""
         text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px;
     }
 
-    /* --- KARANLIK MOD (DARK MODE) ÖZEL AYARLARI --- */
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
-        
-        /* Karanlık Modda Sol Menü */
         [data-testid="stSidebar"] {
-            background-color: #11151a !important; /* Koyu lacivert/siyah arka plan */
+            background-color: #11151a !important;
         }
         [data-testid="stSidebar"] * {
-            color: #e2e8f0 !important; /* Beyaza yakın gri okunaklı yazılar */
+            color: #e2e8f0 !important;
         }
         div[data-testid="stSidebarUserContent"] .stMultiSelect, 
         div[data-testid="stSidebarUserContent"] .stSelectbox,
         div[data-testid="stSidebarUserContent"] .stRadio {
-            background-color: #1a1c23 !important; /* Kutu içi koyu renk */
-            border: 2px solid #3b82f6 !important; /* Çerçeveler parlak mavi */
+            background-color: #1a1c23 !important;
+            border: 2px solid #3b82f6 !important;
         }
     }
 </style>
@@ -142,28 +131,28 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
-            # 1. Aşama: Görünmez Karakterleri Temizleme (Hata Sebebi Buydu)
-            # Tüm özel boşlukları (non-breaking space vb.) normal boşluğa çevirir ve fazlalıkları siler
+            # Tüm özel boşlukları (non-breaking space vb.) normal boşluğa çevirir
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True)
             df.columns = df.columns.str.replace(r'\s+', ' ', regex=True).str.strip()
             
-            # 2. Aşama: Olası "İşlenen Numune" kelimesini yakalayıp düzeltme
-            for col in df.columns:
-                if "İşlenen Numune" in col or "işlenen numune" in col.lower():
+            # --- ESNEK İSİM TANIMA MOTORU (Kırılmaz Yapı) ---
+            # E-Tabloda başlıkları nasıl yazarsanız yazın, sistem anahtar kelimeden tanır.
+            for col in list(df.columns):
+                kucuk_isim = col.lower()
+                if "işlenen numune" in kucuk_isim:
                     df.rename(columns={col: 'İşlenen Numune Sayısı'}, inplace=True)
-                if "Yapılan Test" in col or "yapılan test" in col.lower():
+                elif "yapılan test" in kucuk_isim:
                     df.rename(columns={col: 'Yapılan Test'}, inplace=True)
-            
-            # --- AKILLI HATA TESPİT SİSTEMİ ---
-            beklenen_sutunlar = ['Test tarihi', 'Gelen Numune Sayısı', 'İşlenen Numune Sayısı', 'Kurum/Numune Sahibi']
-            eksikler = [s for s in beklenen_sutunlar if s not in df.columns]
-            
-            if eksikler:
-                st.error(f"🚨 Kodun Çökmesi Engellendi! E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
-                st.info(f"💡 Tablonuzdaki temizlenmiş mevcut başlıklar şunlar: **{', '.join(df.columns)}**")
-                return pd.DataFrame()
+                elif "fatura tutar" in kucuk_isim:
+                    df.rename(columns={col: 'Fatura Tutarı'}, inplace=True)
+                elif "tahsilat durum" in kucuk_isim:
+                    df.rename(columns={col: 'Tahsilat Durumu'}, inplace=True)
+                elif "şehir" in kucuk_isim:
+                    df.rename(columns={col: 'Numunenin Geldiği Şehir'}, inplace=True)
+                elif "kurum" in kucuk_isim or "sahibi" in kucuk_isim:
+                    df.rename(columns={col: 'Kurum/Numune Sahibi'}, inplace=True)
 
-            # Verileri dönüştür
+            # Verileri Dönüştür ve Temizle
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
             df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
             df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
@@ -174,8 +163,9 @@ if st.session_state['giris_yapildi']:
             df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
             df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
             
-            if 'Fatura Tutarı(KDV HARİÇ)' in df.columns:
-                df['Fatura Tutarı(KDV HARİÇ)'] = pd.to_numeric(df['Fatura Tutarı(KDV HARİÇ)'], errors='coerce').fillna(0)
+            if 'Fatura Tutarı' in df.columns:
+                # Fatura tutarının içindeki olası TL, virgül vs işaretleri temizleyip sayıya çeviriyoruz
+                df['Fatura Tutarı'] = pd.to_numeric(df['Fatura Tutarı'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
             
             if 'Tahsilat Durumu' in df.columns:
                 df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
@@ -185,7 +175,7 @@ if st.session_state['giris_yapildi']:
             
             return df
         except Exception as e:
-            st.error(f"Beklenmeyen bir veri formatı hatası: {e}")
+            st.error(f"Beklenmeyen bir veri okuma hatası: {e}")
             return pd.DataFrame()
 
     df_ham = veri_getir()
@@ -211,10 +201,10 @@ if st.session_state['giris_yapildi']:
         st.markdown("<br>", unsafe_allow_html=True)
 
         f1, f2, f3 = st.columns(3)
-        toplam_ciro = df['Fatura Tutarı(KDV HARİÇ)'].sum() if 'Fatura Tutarı(KDV HARİÇ)' in df.columns else 0
+        toplam_ciro = df['Fatura Tutarı'].sum() if 'Fatura Tutarı' in df.columns else 0
         
-        if 'Tahsilat Durumu' in df.columns:
-            bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı(KDV HARİÇ)'].sum()
+        if 'Tahsilat Durumu' in df.columns and 'Fatura Tutarı' in df.columns:
+            bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı'].sum()
         else:
             bekleyen_tahsilat = 0
             
@@ -240,9 +230,9 @@ if st.session_state['giris_yapildi']:
                 st.plotly_chart(fig_sehir, use_container_width=True)
 
         with lok2:
-            if 'Tahsilat Durumu' in df.columns:
-                tahsilat_ozet = df.groupby('Tahsilat Durumu')['Fatura Tutarı(KDV HARİÇ)'].sum().reset_index()
-                fig_tahsilat = px.pie(tahsilat_ozet, values='Fatura Tutarı(KDV HARİÇ)', names='Tahsilat Durumu', hole=0.5,
+            if 'Tahsilat Durumu' in df.columns and 'Fatura Tutarı' in df.columns:
+                tahsilat_ozet = df.groupby('Tahsilat Durumu')['Fatura Tutarı'].sum().reset_index()
+                fig_tahsilat = px.pie(tahsilat_ozet, values='Fatura Tutarı', names='Tahsilat Durumu', hole=0.5,
                                       title='Finansal Tahsilat Durumu', color_discrete_sequence=guncel_liste,
                                       template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
                 fig_tahsilat.update_traces(textinfo='percent+label')
@@ -252,19 +242,20 @@ if st.session_state['giris_yapildi']:
         st.divider()
 
         st.subheader("🏢 Müşteri Performans Analizleri")
-        m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
-        fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
-                      title='Müşteri Bazlı Numune Girişi (İlk 15)', color='Gelen Numune Sayısı', 
-                      color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-        fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=550, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig1, use_container_width=True)
+        if 'Kurum/Numune Sahibi' in df.columns:
+            m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
+            fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
+                          title='Müşteri Bazlı Numune Girişi (İlk 15)', color='Gelen Numune Sayısı', 
+                          color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+            fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=550, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig1, use_container_width=True)
 
-        m_islenen = df.groupby('Kurum/Numune Sahibi')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False).head(15)
-        fig2 = px.bar(m_islenen, x='İşlenen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
-                      title='Müşterilere Göre İşlenen Test Adedi (İlk 15)', color='İşlenen Numune Sayısı', 
-                      color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-        fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=550, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig2, use_container_width=True)
+            m_islenen = df.groupby('Kurum/Numune Sahibi')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False).head(15)
+            fig2 = px.bar(m_islenen, x='İşlenen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
+                          title='Müşterilere Göre İşlenen Test Adedi (İlk 15)', color='İşlenen Numune Sayısı', 
+                          color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+            fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=550, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig2, use_container_width=True)
 
         st.divider()
 
