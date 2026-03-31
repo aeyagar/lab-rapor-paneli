@@ -104,18 +104,13 @@ if st.session_state['giris_yapildi']:
     guncel_skala = renk_ayarlari[secilen_renk]["skala"]
     guncel_liste = renk_ayarlari[secilen_renk]["liste"]
 
-    "https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing"
+    # --- GOOGLE SHEETS CANLI VERİ BAĞLANTISI ---
     @st.cache_data(ttl=15) # 15 saniyede bir Google Sheets'i günceller
     def veri_getir():
         try:
-            # LÜTFEN KENDİ GOOGLE SHEETS PAYLAŞIM LİNKİNİZİ BURAYA YAPIŞTIRIN:
-            sheet_url = "GOOGLE_SHEETS_LINKINIZ_BURAYA"
+            # Sizin E-Tablo linkiniz tırnak içinde ve güvenli bir şekilde buraya eklendi
+            sheet_url = "https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing"
             
-            # Eğer kullanıcı linki yapıştırmayı unutursa örnek veri uyarısı ver
-            if sheet_url == "GOOGLE_SHEETS_LINKINIZ_BURAYA":
-                st.warning("⚠️ Lütfen kodun içindeki 'sheet_url' kısmına kendi Google Sheets linkinizi yapıştırın.")
-                return pd.DataFrame()
-
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             df.columns = df.columns.str.strip()
@@ -133,8 +128,10 @@ if st.session_state['giris_yapildi']:
             df['Fatura Tutarı(KDV HARİÇ)'] = pd.to_numeric(df['Fatura Tutarı(KDV HARİÇ)'], errors='coerce').fillna(0)
             
             # NaN (Boş) metin değerlerini temizleme
-            df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
-            df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].fillna('Bilinmiyor')
+            if 'Tahsilat Durumu' in df.columns:
+                df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
+            if 'Numunenin Geldiği Şehir' in df.columns:
+                df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].fillna('Bilinmiyor')
             
             return df
         except Exception as e:
@@ -165,9 +162,16 @@ if st.session_state['giris_yapildi']:
         # Finans ve Lokasyon Metrikleri
         f1, f2, f3 = st.columns(3)
         toplam_ciro = df['Fatura Tutarı(KDV HARİÇ)'].sum()
-        bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı(KDV HARİÇ)'].sum()
         
-        f1.metric("🌍 Numune Gelen Şehir", f"{df['Numunenin Geldiği Şehir'].nunique()} Şehir")
+        # 'Ödenmedi' ibaresi geçenleri bulup tahsilat hesaplama
+        if 'Tahsilat Durumu' in df.columns:
+            bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı(KDV HARİÇ)'].sum()
+        else:
+            bekleyen_tahsilat = 0
+            
+        sehir_sayisi = df['Numunenin Geldiği Şehir'].nunique() if 'Numunenin Geldiği Şehir' in df.columns else 0
+        
+        f1.metric("🌍 Numune Gelen Şehir", f"{sehir_sayisi} Şehir")
         f2.metric("💰 Toplam Ciro (KDV Hariç)", f"₺ {toplam_ciro:,.2f}")
         f3.metric("⏳ Bekleyen Tahsilat", f"₺ {bekleyen_tahsilat:,.2f}")
 
@@ -178,21 +182,23 @@ if st.session_state['giris_yapildi']:
         lok1, lok2 = st.columns(2)
         
         with lok1:
-            sehir_dagilimi = df.groupby('Numunenin Geldiği Şehir')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(10)
-            fig_sehir = px.bar(sehir_dagilimi, x='Numunenin Geldiği Şehir', y='Gelen Numune Sayısı', 
-                               title='En Çok Numune Gönderen Şehirler', text_auto='.0f', color='Gelen Numune Sayısı', 
-                               color_continuous_scale=guncel_skala, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-            fig_sehir.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig_sehir, use_container_width=True)
+            if 'Numunenin Geldiği Şehir' in df.columns:
+                sehir_dagilimi = df.groupby('Numunenin Geldiği Şehir')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(10)
+                fig_sehir = px.bar(sehir_dagilimi, x='Numunenin Geldiği Şehir', y='Gelen Numune Sayısı', 
+                                   title='En Çok Numune Gönderen Şehirler', text_auto='.0f', color='Gelen Numune Sayısı', 
+                                   color_continuous_scale=guncel_skala, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+                fig_sehir.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_sehir, use_container_width=True)
 
         with lok2:
-            tahsilat_ozet = df.groupby('Tahsilat Durumu')['Fatura Tutarı(KDV HARİÇ)'].sum().reset_index()
-            fig_tahsilat = px.pie(tahsilat_ozet, values='Fatura Tutarı(KDV HARİÇ)', names='Tahsilat Durumu', hole=0.5,
-                                  title='Finansal Tahsilat Durumu', color_discrete_sequence=guncel_liste,
-                                  template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-            fig_tahsilat.update_traces(textinfo='percent+label')
-            fig_tahsilat.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig_tahsilat, use_container_width=True)
+            if 'Tahsilat Durumu' in df.columns:
+                tahsilat_ozet = df.groupby('Tahsilat Durumu')['Fatura Tutarı(KDV HARİÇ)'].sum().reset_index()
+                fig_tahsilat = px.pie(tahsilat_ozet, values='Fatura Tutarı(KDV HARİÇ)', names='Tahsilat Durumu', hole=0.5,
+                                      title='Finansal Tahsilat Durumu', color_discrete_sequence=guncel_liste,
+                                      template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+                fig_tahsilat.update_traces(textinfo='percent+label')
+                fig_tahsilat.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_tahsilat, use_container_width=True)
 
         st.divider()
 
@@ -238,11 +244,12 @@ if st.session_state['giris_yapildi']:
         st.divider()
 
         # --- TEST DAĞILIMI (GÜNCELLENEN BAŞLIK: Yapılan Test) ---
-        test_dagilimi = df.groupby('Yapılan Test')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False).head(20)
-        fig_test = px.funnel(test_dagilimi, x='İşlenen Numune Sayısı', y='Yapılan Test', 
-                             title='En Çok Çalışılan Test Panelleri (İlk 20)', color_discrete_sequence=guncel_liste,
-                             template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-        fig_test.update_layout(height=700, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_test, use_container_width=True)
+        if 'Yapılan Test' in df.columns:
+            test_dagilimi = df.groupby('Yapılan Test')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False).head(20)
+            fig_test = px.funnel(test_dagilimi, x='İşlenen Numune Sayısı', y='Yapılan Test', 
+                                 title='En Çok Çalışılan Test Panelleri (İlk 20)', color_discrete_sequence=guncel_liste,
+                                 template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+            fig_test.update_layout(height=700, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_test, use_container_width=True)
 
         st.caption(f"⚙️ Canlı Veri Bağlantısı Aktif | Son Senkronizasyon: {datetime.datetime.now().strftime('%H:%M:%S')}")
