@@ -104,7 +104,7 @@ if st.session_state['giris_yapildi']:
     guncel_skala = renk_ayarlari[secilen_renk]["skala"]
     guncel_liste = renk_ayarlari[secilen_renk]["liste"]
 
-    https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing
+    "https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing"
     @st.cache_data(ttl=15) # 15 saniyede bir Google Sheets'i günceller
     def veri_getir():
         try:
