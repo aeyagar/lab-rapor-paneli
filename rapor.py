@@ -131,29 +131,22 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
-            # Tüm özel boşlukları (non-breaking space vb.) normal boşluğa çevirir
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True)
             df.columns = df.columns.str.replace(r'\s+', ' ', regex=True).str.strip()
             
-            # --- ESNEK İSİM TANIMA MOTORU (Kırılmaz Yapı) ---
-            # E-Tabloda başlıkları nasıl yazarsanız yazın, sistem anahtar kelimeden tanır.
             for col in list(df.columns):
                 kucuk_isim = col.lower()
-                if "işlenen numune" in kucuk_isim:
-                    df.rename(columns={col: 'İşlenen Numune Sayısı'}, inplace=True)
-                elif "yapılan test" in kucuk_isim:
-                    df.rename(columns={col: 'Yapılan Test'}, inplace=True)
-                elif "fatura tutar" in kucuk_isim:
-                    df.rename(columns={col: 'Fatura Tutarı'}, inplace=True)
-                elif "tahsilat durum" in kucuk_isim:
-                    df.rename(columns={col: 'Tahsilat Durumu'}, inplace=True)
-                elif "şehir" in kucuk_isim:
-                    df.rename(columns={col: 'Numunenin Geldiği Şehir'}, inplace=True)
-                elif "kurum" in kucuk_isim or "sahibi" in kucuk_isim:
-                    df.rename(columns={col: 'Kurum/Numune Sahibi'}, inplace=True)
+                if "işlenen numune" in kucuk_isim: df.rename(columns={col: 'İşlenen Numune Sayısı'}, inplace=True)
+                elif "yapılan test" in kucuk_isim: df.rename(columns={col: 'Yapılan Test'}, inplace=True)
+                elif "fatura tutar" in kucuk_isim: df.rename(columns={col: 'Fatura Tutarı'}, inplace=True)
+                elif "tahsilat durum" in kucuk_isim: df.rename(columns={col: 'Tahsilat Durumu'}, inplace=True)
+                elif "şehir" in kucuk_isim: df.rename(columns={col: 'Numunenin Geldiği Şehir'}, inplace=True)
+                elif "kurum" in kucuk_isim or "sahibi" in kucuk_isim: df.rename(columns={col: 'Kurum/Numune Sahibi'}, inplace=True)
 
-            # Verileri Dönüştür ve Temizle
+            # Tarih Çevirme ve BOŞ SATIRLARI SİLME (Hayalet ayları önleyen kod)
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
+            df = df.dropna(subset=['Test tarihi']) # Google Sheets'in altındaki yüzlerce boş satırı yutar
+            
             df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
             df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
             ay_sozlugu = {1:'Ocak', 2:'Şubat', 3:'Mart', 4:'Nisan', 5:'Mayıs', 6:'Haziran', 
@@ -164,14 +157,10 @@ if st.session_state['giris_yapildi']:
             df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
             
             if 'Fatura Tutarı' in df.columns:
-                # Fatura tutarının içindeki olası TL, virgül vs işaretleri temizleyip sayıya çeviriyoruz
                 df['Fatura Tutarı'] = pd.to_numeric(df['Fatura Tutarı'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
             
-            if 'Tahsilat Durumu' in df.columns:
-                df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
-            
-            if 'Numunenin Geldiği Şehir' in df.columns:
-                df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].fillna('Bilinmiyor')
+            if 'Tahsilat Durumu' in df.columns: df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
+            if 'Numunenin Geldiği Şehir' in df.columns: df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].fillna('Bilinmiyor')
             
             return df
         except Exception as e:
@@ -182,9 +171,12 @@ if st.session_state['giris_yapildi']:
 
     if not df_ham.empty:
         ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+        
+        # Dinamik Ay Listesi (Sadece verisi olan aylar filtrede ve grafikte çıkar)
+        gecerli_aylar = [ay for ay in ay_sirasi if ay in df_ham['Ay'].unique()]
+        
         st.sidebar.markdown("### 📅 Filtreler")
-        mevcut_aylar = sorted(df_ham['Ay'].dropna().unique().tolist(), key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
-        secilen_aylar = st.sidebar.multiselect("Ayları Filtrele:", mevcut_aylar, default=mevcut_aylar)
+        secilen_aylar = st.sidebar.multiselect("Ayları Filtrele:", gecerli_aylar, default=gecerli_aylar)
         df = df_ham[df_ham['Ay'].isin(secilen_aylar)] if secilen_aylar else df_ham
         
         st.sidebar.divider()
@@ -202,12 +194,7 @@ if st.session_state['giris_yapildi']:
 
         f1, f2, f3 = st.columns(3)
         toplam_ciro = df['Fatura Tutarı'].sum() if 'Fatura Tutarı' in df.columns else 0
-        
-        if 'Tahsilat Durumu' in df.columns and 'Fatura Tutarı' in df.columns:
-            bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı'].sum()
-        else:
-            bekleyen_tahsilat = 0
-            
+        bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı'].sum() if 'Tahsilat Durumu' in df.columns and 'Fatura Tutarı' in df.columns else 0
         sehir_sayisi = df['Numunenin Geldiği Şehir'].nunique() if 'Numunenin Geldiği Şehir' in df.columns else 0
         
         f1.metric("🌍 Numune Gelen Şehir", f"{sehir_sayisi} Şehir")
@@ -262,9 +249,12 @@ if st.session_state['giris_yapildi']:
         st.subheader("⏳ Dönemsel Yoğunluk Analizi")
         if grafik_tarzi == "📈 Çubuk (Bar)":
             haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['İşlenen Numune Sayısı'].sum().reset_index()
+            # X eksenini sadece filtrelenen (içi dolu) aylarla kısıtlar
+            aktif_ay_sirasi = [ay for ay in ay_sirasi if ay in secilen_aylar]
+            
             fig_zaman = px.bar(haftalik_veri, x='Ay', y='İşlenen Numune Sayısı', color='Hafta Metni', 
                                barmode='group', title='Aylık/Haftalık İşlem Hacmi', text_auto='.0f',
-                               category_orders={'Ay': ay_sirasi}, color_discrete_sequence=guncel_liste,
+                               category_orders={'Ay': aktif_ay_sirasi}, color_discrete_sequence=guncel_liste,
                                template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
             fig_zaman.update_layout(height=500, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_zaman, use_container_width=True)
