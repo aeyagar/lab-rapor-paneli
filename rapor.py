@@ -39,6 +39,29 @@ st.markdown("""
     .imza-alani { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; padding-top: 10px; }
     .logo-alti-yazi { text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px; }
 
+    /* --- YENİ EKLENEN: AYLIK MİNİ CİRO KUTULARI --- */
+    .mini-ciro-kutu {
+        border: 2px solid #1a4a7c;
+        padding: 12px;
+        border-radius: 12px;
+        text-align: center;
+        min-width: 120px;
+        background-color: transparent;
+        flex: 1 1 0; /* Kutuların yan yana eşit esnemesini sağlar */
+    }
+    .mini-ciro-ay {
+        font-size: 1rem;
+        font-weight: 800;
+        color: var(--text-color);
+        margin-bottom: 5px;
+    }
+    .mini-ciro-deger {
+        color: #1a4a7c;
+        font-size: 1.25rem;
+        font-weight: 900;
+    }
+
+    /* KARANLIK MOD AYARLARI */
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
@@ -49,6 +72,8 @@ st.markdown("""
         div[data-testid="stSidebarUserContent"] .stRadio {
             background-color: #1a1c23 !important; border: 2px solid #3b82f6 !important;
         }
+        .mini-ciro-kutu { border-color: #3b82f6; background-color: #11151a; }
+        .mini-ciro-deger { color: #3b82f6; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -109,11 +134,10 @@ if st.session_state['giris_yapildi']:
                 elif "şehir" in kucuk_isim: df.rename(columns={col: 'Numunenin Geldiği Şehir'}, inplace=True)
                 elif "kurum" in kucuk_isim or "sahibi" in kucuk_isim: df.rename(columns={col: 'Kurum/Numune Sahibi'}, inplace=True)
 
-            # --- AMERİKAN TARİH HATASI ÇÖZÜMÜ (dayfirst=True) ---
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
-            df = df.dropna(subset=['Test tarihi']) # Boş satırları sil
+            df = df.dropna(subset=['Test tarihi'])
             
-            df['Yıl'] = df['Test tarihi'].dt.year.astype(int).astype(str) # Yıl Sütunu Oluşturuldu
+            df['Yıl'] = df['Test tarihi'].dt.year.astype(int).astype(str)
             df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
             df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
             
@@ -142,7 +166,6 @@ if st.session_state['giris_yapildi']:
         
         st.sidebar.markdown("### 📅 Filtreler")
         
-        # --- YENİ YIL FİLTRESİ ---
         mevcut_yillar = sorted(df_ham['Yıl'].unique().tolist(), reverse=True)
         secilen_yillar = st.sidebar.multiselect("Yılı Filtrele:", mevcut_yillar, default=mevcut_yillar)
         df_yilli = df_ham[df_ham['Yıl'].isin(secilen_yillar)] if secilen_yillar else df_ham
@@ -172,6 +195,25 @@ if st.session_state['giris_yapildi']:
         f1.metric("🌍 Numune Gelen Şehir", f"{sehir_sayisi} Şehir")
         f2.metric("💰 Toplam Ciro (KDV Hariç)", f"₺ {toplam_ciro:,.2f}")
         f3.metric("⏳ Bekleyen Tahsilat", f"₺ {bekleyen_tahsilat:,.2f}")
+
+        # --- YENİ EKLENEN: AYLIK CİRO DAĞILIMI ---
+        if 'Fatura Tutarı' in df.columns:
+            st.markdown("<br><h5 style='text-align:center; font-weight: 800; color: var(--text-color);'>📅 Aylık Ciro Dağılımı</h5>", unsafe_allow_html=True)
+            
+            aylik_ciro = df.groupby('Ay')['Fatura Tutarı'].sum().reset_index()
+            aylik_ciro['Ay_Sirasi'] = aylik_ciro['Ay'].apply(lambda x: ay_sirasi.index(x))
+            aylik_ciro = aylik_ciro.sort_values('Ay_Sirasi')
+            
+            html_content = '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 10px;">'
+            for _, row in aylik_ciro.iterrows():
+                html_content += f'''
+                <div class="mini-ciro-kutu">
+                    <div class="mini-ciro-ay">{row['Ay']}</div>
+                    <div class="mini-ciro-deger">₺ {row['Fatura Tutarı']:,.0f}</div>
+                </div>
+                '''
+            html_content += '</div>'
+            st.markdown(html_content, unsafe_allow_html=True)
 
         st.divider()
 
