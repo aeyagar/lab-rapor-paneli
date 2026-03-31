@@ -13,80 +13,49 @@ st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", 
 st.markdown("""
 <style>
     .ana-baslik-kutusu {
-        background-color: transparent;
-        border: 4px solid #1a4a7c;
-        padding: 20px;
-        border-radius: 15px;
-        text-align: center;
-        margin-bottom: 30px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
+        background-color: transparent; border: 4px solid #1a4a7c;
+        padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 30px;
     }
-    .ana-baslik-yazisi {
-        color: var(--text-color);
-        font-size: 38px !important;
-        font-weight: 900 !important;
-        margin: 0;
-    }
+    .ana-baslik-yazisi { color: var(--text-color); font-size: 38px !important; font-weight: 900 !important; margin: 0; }
+    
     [data-testid="stMetric"] {
-        background-color: transparent;
-        border: 3px solid #1a4a7c !important;
-        padding: 20px !important;
-        border-radius: 20px !important;
-        box-shadow: 6px 6px 20px rgba(0,0,0,0.1) !important;
+        background-color: transparent; border: 3px solid #1a4a7c !important;
+        padding: 20px !important; border-radius: 20px !important;
     }
-    div[data-testid="stMetricValue"] > div {
-        color: #1a4a7c !important;
-        font-weight: 900 !important;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #f8f9fa !important;
-    }
-    [data-testid="stSidebar"] * {
-        color: #1e2125 !important;
+    div[data-testid="stMetricValue"] > div { color: #1a4a7c !important; font-weight: 900 !important; }
+    
+    /* Sol Menü Yazı Renklerini Zorla Düzeltme */
+    section[data-testid="stSidebar"] { background-color: #f8f9fa !important; }
+    section[data-testid="stSidebar"] .stMarkdown p, section[data-testid="stSidebar"] label { 
+        color: #1e2125 !important; font-weight: 700 !important; 
     }
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
-        background-color: #ffffff !important;
-        border: 2px solid #1a4a7c !important;
-        padding: 15px !important;
-        border-radius: 12px !important;
-        margin-bottom: 15px !important;
+        background-color: #ffffff !important; border: 2px solid #1a4a7c !important;
+        padding: 15px !important; border-radius: 12px !important; margin-bottom: 15px !important;
     }
-    .imza-alani {
-        text-align: right;
-        font-family: 'Courier New', Courier, monospace;
-        font-weight: bold;
-        padding-top: 10px;
-    }
-    .logo-alti-yazi {
-        text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px;
-    }
+
+    .imza-alani { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; padding-top: 10px; }
+    .logo-alti-yazi { text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px; }
 
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
-        [data-testid="stSidebar"] {
-            background-color: #11151a !important;
-        }
-        [data-testid="stSidebar"] * {
-            color: #e2e8f0 !important;
-        }
+        section[data-testid="stSidebar"] { background-color: #11151a !important; }
+        section[data-testid="stSidebar"] .stMarkdown p, section[data-testid="stSidebar"] label { color: #e2e8f0 !important; }
         div[data-testid="stSidebarUserContent"] .stMultiSelect, 
         div[data-testid="stSidebarUserContent"] .stSelectbox,
         div[data-testid="stSidebarUserContent"] .stRadio {
-            background-color: #1a1c23 !important;
-            border: 2px solid #3b82f6 !important;
+            background-color: #1a1c23 !important; border: 2px solid #3b82f6 !important;
         }
     }
 </style>
 """, unsafe_allow_html=True)
 
 # --- OTURUM YÖNETİMİ ---
-if 'giris_yapildi' not in st.session_state:
-    st.session_state['giris_yapildi'] = False
+if 'giris_yapildi' not in st.session_state: st.session_state['giris_yapildi'] = False
 
-# --- GİRİŞ EKRANI ---
 if not st.session_state['giris_yapildi']:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -101,7 +70,6 @@ if not st.session_state['giris_yapildi']:
                     st.rerun()
                 else: st.error("❌ Bilgiler hatalı!")
 
-# --- ANA UYGULAMA ---
 if st.session_state['giris_yapildi']:
     st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
@@ -123,7 +91,6 @@ if st.session_state['giris_yapildi']:
     guncel_skala = renk_ayarlari[secilen_renk]["skala"]
     guncel_liste = renk_ayarlari[secilen_renk]["liste"]
 
-    # --- GOOGLE SHEETS CANLI VERİ BAĞLANTISI ---
     @st.cache_data(ttl=15)
     def veri_getir():
         try:
@@ -131,8 +98,7 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
-            df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True)
-            df.columns = df.columns.str.replace(r'\s+', ' ', regex=True).str.strip()
+            df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
             
             for col in list(df.columns):
                 kucuk_isim = col.lower()
@@ -143,12 +109,14 @@ if st.session_state['giris_yapildi']:
                 elif "şehir" in kucuk_isim: df.rename(columns={col: 'Numunenin Geldiği Şehir'}, inplace=True)
                 elif "kurum" in kucuk_isim or "sahibi" in kucuk_isim: df.rename(columns={col: 'Kurum/Numune Sahibi'}, inplace=True)
 
-            # Tarih Çevirme ve BOŞ SATIRLARI SİLME (Hayalet ayları önleyen kod)
-            df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce')
-            df = df.dropna(subset=['Test tarihi']) # Google Sheets'in altındaki yüzlerce boş satırı yutar
+            # --- AMERİKAN TARİH HATASI ÇÖZÜMÜ (dayfirst=True) ---
+            df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
+            df = df.dropna(subset=['Test tarihi']) # Boş satırları sil
             
+            df['Yıl'] = df['Test tarihi'].dt.year.astype(int).astype(str) # Yıl Sütunu Oluşturuldu
             df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
             df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
+            
             ay_sozlugu = {1:'Ocak', 2:'Şubat', 3:'Mart', 4:'Nisan', 5:'Mayıs', 6:'Haziran', 
                           7:'Temmuz', 8:'Ağustos', 9:'Eylül', 10:'Ekim', 11:'Kasım', 12:'Aralık'}
             df['Ay'] = df['Test tarihi'].dt.month.map(ay_sozlugu)
@@ -172,19 +140,23 @@ if st.session_state['giris_yapildi']:
     if not df_ham.empty:
         ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
         
-        # Dinamik Ay Listesi (Sadece verisi olan aylar filtrede ve grafikte çıkar)
-        gecerli_aylar = [ay for ay in ay_sirasi if ay in df_ham['Ay'].unique()]
-        
         st.sidebar.markdown("### 📅 Filtreler")
+        
+        # --- YENİ YIL FİLTRESİ ---
+        mevcut_yillar = sorted(df_ham['Yıl'].unique().tolist(), reverse=True)
+        secilen_yillar = st.sidebar.multiselect("Yılı Filtrele:", mevcut_yillar, default=mevcut_yillar)
+        df_yilli = df_ham[df_ham['Yıl'].isin(secilen_yillar)] if secilen_yillar else df_ham
+        
+        gecerli_aylar = sorted([ay for ay in df_yilli['Ay'].unique() if ay in ay_sirasi], key=lambda x: ay_sirasi.index(x))
         secilen_aylar = st.sidebar.multiselect("Ayları Filtrele:", gecerli_aylar, default=gecerli_aylar)
-        df = df_ham[df_ham['Ay'].isin(secilen_aylar)] if secilen_aylar else df_ham
+        
+        df = df_yilli[df_yilli['Ay'].isin(secilen_aylar)] if secilen_aylar else df_yilli
         
         st.sidebar.divider()
         col_cikis, col_imza = st.sidebar.columns([1,1])
         with col_cikis: st.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
         with col_imza: st.markdown('<div class="imza-alani">AEY</div>', unsafe_allow_html=True)
 
-        # --- YENİ OPERASYONEL VE FİNANSAL METRİKLER ---
         m1, m2, m3 = st.columns(3)
         m1.metric("🐄 Gelen Numune Sayısı", f"{int(df['Gelen Numune Sayısı'].sum()):,.0f} Adet")
         m2.metric("🧪 İşlenen Test Adedi", f"{int(df['İşlenen Numune Sayısı'].sum()):,.0f} Adet")
@@ -203,7 +175,6 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- YENİ LOKASYON VE FİNANS GRAFİKLERİ ---
         st.subheader("🌍 Şehir ve Tahsilat Dağılımı")
         lok1, lok2 = st.columns(2)
         
@@ -249,7 +220,6 @@ if st.session_state['giris_yapildi']:
         st.subheader("⏳ Dönemsel Yoğunluk Analizi")
         if grafik_tarzi == "📈 Çubuk (Bar)":
             haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['İşlenen Numune Sayısı'].sum().reset_index()
-            # X eksenini sadece filtrelenen (içi dolu) aylarla kısıtlar
             aktif_ay_sirasi = [ay for ay in ay_sirasi if ay in secilen_aylar]
             
             fig_zaman = px.bar(haftalik_veri, x='Ay', y='İşlenen Numune Sayısı', color='Hafta Metni', 
