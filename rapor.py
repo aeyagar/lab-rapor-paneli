@@ -5,6 +5,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import datetime
 import os
+import re
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
@@ -12,6 +13,7 @@ st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", 
 # --- 🎨 KURUMSAL LACİVERT TASARIM VE AKILLI RENK CSS ---
 st.markdown("""
 <style>
+    /* Ana Başlık Kutusu */
     .ana-baslik-kutusu {
         background-color: transparent;
         border: 4px solid #1a4a7c;
@@ -27,6 +29,8 @@ st.markdown("""
         font-weight: 900 !important;
         margin: 0;
     }
+    
+    /* Metrik Kare Balonlar */
     [data-testid="stMetric"] {
         background-color: transparent;
         border: 3px solid #1a4a7c !important;
@@ -38,27 +42,53 @@ st.markdown("""
         color: #1a4a7c !important;
         font-weight: 900 !important;
     }
+    
+    /* --- SOL MENÜ (SIDEBAR) KESİN OKUNABİLİRLİK ÇÖZÜMÜ --- */
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa !important; /* Aydınlık mod için açık gri arka plan */
+    }
+    [data-testid="stSidebar"] * {
+        color: #1e2125 !important; /* Aydınlık mod için koyu antrasit yazılar */
+    }
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
+        background-color: #ffffff !important;
         border: 2px solid #1a4a7c !important;
         padding: 15px !important;
         border-radius: 12px !important;
         margin-bottom: 15px !important;
     }
+
+    /* İmza Alanı ve Logo Altı */
     .imza-alani {
         text-align: right;
         font-family: 'Courier New', Courier, monospace;
         font-weight: bold;
-        color: var(--text-color);
         padding-top: 10px;
     }
     .logo-alti-yazi {
-        text-align: center; font-weight: 800; color: #1a4a7c; margin-top: 10px;
+        text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px;
     }
+
+    /* --- KARANLIK MOD (DARK MODE) ÖZEL AYARLARI --- */
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
+        
+        /* Karanlık Modda Sol Menü */
+        [data-testid="stSidebar"] {
+            background-color: #11151a !important; /* Koyu lacivert/siyah arka plan */
+        }
+        [data-testid="stSidebar"] * {
+            color: #e2e8f0 !important; /* Beyaza yakın gri okunaklı yazılar */
+        }
+        div[data-testid="stSidebarUserContent"] .stMultiSelect, 
+        div[data-testid="stSidebarUserContent"] .stSelectbox,
+        div[data-testid="stSidebarUserContent"] .stRadio {
+            background-color: #1a1c23 !important; /* Kutu içi koyu renk */
+            border: 2px solid #3b82f6 !important; /* Çerçeveler parlak mavi */
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -112,22 +142,25 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
-            # Eğer erişim kapalıysa (Google Giriş sayfasına atıyorsa) uyar
-            if len(df.columns) == 1 and 'html' in str(df.columns[0]).lower():
-                st.error("🚨 Google E-Tablonuz 'Kısıtlı' modda! Lütfen sağ üstteki Paylaş butonundan erişimi 'Bağlantıya sahip olan herkes görüntüleyebilir' yapın.")
-                return pd.DataFrame()
-                
-            # Sütun başlıklarındaki fazla boşlukları ve alt satıra geçmeleri (Enter) temizle
-            df.columns = df.columns.str.strip().str.replace('\n', ' ')
+            # 1. Aşama: Görünmez Karakterleri Temizleme (Hata Sebebi Buydu)
+            # Tüm özel boşlukları (non-breaking space vb.) normal boşluğa çevirir ve fazlalıkları siler
+            df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True)
+            df.columns = df.columns.str.replace(r'\s+', ' ', regex=True).str.strip()
+            
+            # 2. Aşama: Olası "İşlenen Numune" kelimesini yakalayıp düzeltme
+            for col in df.columns:
+                if "İşlenen Numune" in col or "işlenen numune" in col.lower():
+                    df.rename(columns={col: 'İşlenen Numune Sayısı'}, inplace=True)
+                if "Yapılan Test" in col or "yapılan test" in col.lower():
+                    df.rename(columns={col: 'Yapılan Test'}, inplace=True)
             
             # --- AKILLI HATA TESPİT SİSTEMİ ---
             beklenen_sutunlar = ['Test tarihi', 'Gelen Numune Sayısı', 'İşlenen Numune Sayısı', 'Kurum/Numune Sahibi']
             eksikler = [s for s in beklenen_sutunlar if s not in df.columns]
             
             if eksikler:
-                st.error(f"🚨 Kodun Çökmesi Engellendi! E-Tablonuzda şu başlıklar hatalı veya eksik: **{', '.join(eksikler)}**")
-                st.info(f"💡 Tablonuzdaki mevcut başlıklar şunlar: **{', '.join(df.columns)}**")
-                st.warning("Lütfen Google E-Tablonuzun 1. satırındaki başlıkları yukarıdaki isimlerle birebir aynı olacak şekilde düzeltin.")
+                st.error(f"🚨 Kodun Çökmesi Engellendi! E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
+                st.info(f"💡 Tablonuzdaki temizlenmiş mevcut başlıklar şunlar: **{', '.join(df.columns)}**")
                 return pd.DataFrame()
 
             # Verileri dönüştür
@@ -149,10 +182,6 @@ if st.session_state['giris_yapildi']:
             
             if 'Numunenin Geldiği Şehir' in df.columns:
                 df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].fillna('Bilinmiyor')
-            elif 'Numunenin Geldiği Şehir' not in df.columns and any("Şehir" in c for c in df.columns):
-                # Olası Şehir sütunu tespiti
-                olasi_sehir = [c for c in df.columns if "Şehir" in c][0]
-                df['Numunenin Geldiği Şehir'] = df[olasi_sehir].fillna('Bilinmiyor')
             
             return df
         except Exception as e:
