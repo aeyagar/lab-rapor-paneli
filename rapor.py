@@ -24,56 +24,41 @@ st.markdown("""
     }
     div[data-testid="stMetricValue"] > div { color: #1a4a7c !important; font-weight: 900 !important; }
     
-    /* Sol Menü Yazı Renklerini Zorla Düzeltme */
-    section[data-testid="stSidebar"] { background-color: #f8f9fa !important; }
-    section[data-testid="stSidebar"] .stMarkdown p, section[data-testid="stSidebar"] label { 
-        color: #1e2125 !important; font-weight: 700 !important; 
+    /* Sol Menü Yazı Renklerini Zorla Düzeltme (Akıllı Renk) */
+    [data-testid="stSidebar"] p, 
+    [data-testid="stSidebar"] label, 
+    [data-testid="stSidebar"] span { 
+        color: var(--text-color) !important; font-weight: 700 !important; 
     }
     div[data-testid="stSidebarUserContent"] .stMultiSelect, 
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
-        background-color: #ffffff !important; border: 2px solid #1a4a7c !important;
+        background-color: transparent !important; border: 2px solid #1a4a7c !important;
         padding: 15px !important; border-radius: 12px !important; margin-bottom: 15px !important;
     }
 
-    .imza-alani { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; padding-top: 10px; }
+    .imza-alani { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; padding-top: 10px; color: var(--text-color); }
     .logo-alti-yazi { text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px; }
 
-    /* --- YENİ EKLENEN: AYLIK MİNİ CİRO KUTULARI --- */
+    /* AYLIK MİNİ CİRO KUTULARI */
     .mini-ciro-kutu {
-        border: 2px solid #1a4a7c;
-        padding: 12px;
-        border-radius: 12px;
-        text-align: center;
-        min-width: 120px;
-        background-color: transparent;
-        flex: 1 1 0; /* Kutuların yan yana eşit esnemesini sağlar */
+        border: 2px solid #1a4a7c; padding: 12px; border-radius: 12px;
+        text-align: center; min-width: 120px; background-color: transparent; flex: 1 1 0;
     }
-    .mini-ciro-ay {
-        font-size: 1rem;
-        font-weight: 800;
-        color: var(--text-color);
-        margin-bottom: 5px;
-    }
-    .mini-ciro-deger {
-        color: #1a4a7c;
-        font-size: 1.25rem;
-        font-weight: 900;
-    }
+    .mini-ciro-ay { font-size: 1rem; font-weight: 800; color: var(--text-color); margin-bottom: 5px; }
+    .mini-ciro-deger { color: #1a4a7c; font-size: 1.25rem; font-weight: 900; }
 
     /* KARANLIK MOD AYARLARI */
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
-        section[data-testid="stSidebar"] { background-color: #11151a !important; }
-        section[data-testid="stSidebar"] .stMarkdown p, section[data-testid="stSidebar"] label { color: #e2e8f0 !important; }
+        .mini-ciro-kutu { border-color: #3b82f6; }
+        .mini-ciro-deger { color: #3b82f6; }
         div[data-testid="stSidebarUserContent"] .stMultiSelect, 
         div[data-testid="stSidebarUserContent"] .stSelectbox,
         div[data-testid="stSidebarUserContent"] .stRadio {
-            background-color: #1a1c23 !important; border: 2px solid #3b82f6 !important;
+            border: 2px solid #3b82f6 !important;
         }
-        .mini-ciro-kutu { border-color: #3b82f6; background-color: #11151a; }
-        .mini-ciro-deger { color: #3b82f6; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -123,17 +108,30 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
+            # Boşluk temizliği
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
             
-            for col in list(df.columns):
-                kucuk_isim = col.lower()
-                if "işlenen numune" in kucuk_isim: df.rename(columns={col: 'İşlenen Numune Sayısı'}, inplace=True)
-                elif "yapılan test" in kucuk_isim: df.rename(columns={col: 'Yapılan Test'}, inplace=True)
-                elif "fatura tutar" in kucuk_isim: df.rename(columns={col: 'Fatura Tutarı'}, inplace=True)
-                elif "tahsilat durum" in kucuk_isim: df.rename(columns={col: 'Tahsilat Durumu'}, inplace=True)
-                elif "şehir" in kucuk_isim: df.rename(columns={col: 'Numunenin Geldiği Şehir'}, inplace=True)
-                elif "kurum" in kucuk_isim or "sahibi" in kucuk_isim: df.rename(columns={col: 'Kurum/Numune Sahibi'}, inplace=True)
+            # TÜRKÇE KARAKTER HATASINI ÇÖZEN YENİ MOTOR (Büyük Harf Eşleşmesi)
+            sutun_map = {}
+            for col in df.columns:
+                c_upper = col.upper().replace('İ', 'I') 
+                if "IŞLENEN" in c_upper or "ISLENEN" in c_upper: sutun_map[col] = 'İşlenen Numune Sayısı'
+                elif "YAPILAN" in c_upper: sutun_map[col] = 'Yapılan Test'
+                elif "FATURA" in c_upper and "TUTAR" in c_upper: sutun_map[col] = 'Fatura Tutarı'
+                elif "TAHSILAT" in c_upper: sutun_map[col] = 'Tahsilat Durumu'
+                elif "ŞEHIR" in c_upper or "SEHIR" in c_upper: sutun_map[col] = 'Numunenin Geldiği Şehir'
+                elif "KURUM" in c_upper or "SAHIBI" in c_upper: sutun_map[col] = 'Kurum/Numune Sahibi'
+            df.rename(columns=sutun_map, inplace=True)
 
+            # --- GÜVENLİK KONTROLÜ ---
+            beklenen_sutunlar = ['Test tarihi', 'Gelen Numune Sayısı', 'İşlenen Numune Sayısı', 'Kurum/Numune Sahibi']
+            eksikler = [s for s in beklenen_sutunlar if s not in df.columns]
+            if eksikler:
+                st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
+                st.info(f"💡 Tablonuzdaki algılanan başlıklar şunlar: **{', '.join(df.columns)}**")
+                return pd.DataFrame()
+
+            # Tarih Çevirme ve Formatlama
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
             df = df.dropna(subset=['Test tarihi'])
             
@@ -196,7 +194,7 @@ if st.session_state['giris_yapildi']:
         f2.metric("💰 Toplam Ciro (KDV Hariç)", f"₺ {toplam_ciro:,.2f}")
         f3.metric("⏳ Bekleyen Tahsilat", f"₺ {bekleyen_tahsilat:,.2f}")
 
-        # --- YENİ EKLENEN: AYLIK CİRO DAĞILIMI ---
+        # --- YENİ EKLENEN: AYLIK CİRO DAĞILIMI (HTML KOD HATASI GİDERİLDİ) ---
         if 'Fatura Tutarı' in df.columns:
             st.markdown("<br><h5 style='text-align:center; font-weight: 800; color: var(--text-color);'>📅 Aylık Ciro Dağılımı</h5>", unsafe_allow_html=True)
             
@@ -204,14 +202,10 @@ if st.session_state['giris_yapildi']:
             aylik_ciro['Ay_Sirasi'] = aylik_ciro['Ay'].apply(lambda x: ay_sirasi.index(x))
             aylik_ciro = aylik_ciro.sort_values('Ay_Sirasi')
             
+            # HTML girintilerini (indentation) sildim, artık kod olarak değil UI olarak görünecek
             html_content = '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 10px;">'
             for _, row in aylik_ciro.iterrows():
-                html_content += f'''
-                <div class="mini-ciro-kutu">
-                    <div class="mini-ciro-ay">{row['Ay']}</div>
-                    <div class="mini-ciro-deger">₺ {row['Fatura Tutarı']:,.0f}</div>
-                </div>
-                '''
+                html_content += f'<div class="mini-ciro-kutu"><div class="mini-ciro-ay">{row["Ay"]}</div><div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.0f}</div></div>'
             html_content += '</div>'
             st.markdown(html_content, unsafe_allow_html=True)
 
