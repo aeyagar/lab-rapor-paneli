@@ -5,6 +5,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import datetime
 import os
+import re
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
@@ -125,7 +126,6 @@ if st.session_state['giris_yapildi']:
                 st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
                 return pd.DataFrame()
 
-            # --- YOZGAT İÇİN EKLENEN BİRLEŞTİRİCİ KORUNUYOR ---
             sutunlar_ffill = ['Test tarihi', 'Kurum/Numune Sahibi', 'Numunenin Geldiği Şehir']
             for col in sutunlar_ffill:
                 if col in df.columns:
@@ -146,16 +146,34 @@ if st.session_state['giris_yapildi']:
                           7:'Temmuz', 8:'Ağustos', 9:'Eylül', 10:'Ekim', 11:'Kasım', 12:'Aralık'}
             df['Ay'] = df['Test tarihi'].dt.month.map(ay_sozlugu)
             
-            # --- HATAYA SEBEP OLAN REGEX SİLİNDİ, DOĞAL SAYI OKUMA GERİ GELDİ ---
             df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
             df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
             
-            # Ciro/Fatura için (Eğer tablonuzda 1.500,50 gibi virgüllü tutarlar varsa düzgün okuması için)
+            # --- YENİ EKLENEN: AKILLI MUHASEBECİ FONKSİYONU ---
+            def para_temizle(deger):
+                try:
+                    deger = str(deger)
+                    # Sadece rakam, virgül ve noktayı bırakır
+                    deger = re.sub(r'[^\d.,]', '', deger)
+                    if not deger: return 0.0
+                    
+                    # Hem nokta hem virgül varsa (Örn: 1.500,50)
+                    if '.' in deger and ',' in deger:
+                        # Hangisi daha sağdaysa o kuruş ayırıcıdır
+                        if deger.rfind(',') > deger.rfind('.'):
+                            deger = deger.replace('.', '').replace(',', '.') # 1500.50 yapar
+                        else:
+                            deger = deger.replace(',', '') # 1500.50 yapar
+                    # Sadece virgül varsa (Örn: 1500,50)
+                    elif ',' in deger:
+                        deger = deger.replace(',', '.')
+                        
+                    return float(deger)
+                except:
+                    return 0.0
+
             if 'Fatura Tutarı' in df.columns:
-                df['Fatura Tutarı'] = df['Fatura Tutarı'].astype(str).str.replace('TL', '').str.replace('₺', '').str.replace(' ', '')
-                # Eğer Türk usulü noktalı-virgüllü yazıldıysa (1.500,00) onu standart sayıya çevir
-                df['Fatura Tutarı'] = df['Fatura Tutarı'].str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-                df['Fatura Tutarı'] = pd.to_numeric(df['Fatura Tutarı'], errors='coerce').fillna(0)
+                df['Fatura Tutarı'] = df['Fatura Tutarı'].apply(para_temizle)
             
             if 'Tahsilat Durumu' in df.columns: df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
             
