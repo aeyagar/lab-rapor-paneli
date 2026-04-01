@@ -24,7 +24,6 @@ st.markdown("""
     }
     div[data-testid="stMetricValue"] > div { color: #1a4a7c !important; font-weight: 900 !important; }
     
-    /* Sol Menü Yazı Renklerini Zorla Düzeltme (Akıllı Renk) */
     [data-testid="stSidebar"] p, 
     [data-testid="stSidebar"] label, 
     [data-testid="stSidebar"] span { 
@@ -40,7 +39,6 @@ st.markdown("""
     .imza-alani { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; padding-top: 10px; color: var(--text-color); }
     .logo-alti-yazi { text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px; }
 
-    /* AYLIK MİNİ CİRO KUTULARI */
     .mini-ciro-kutu {
         border: 2px solid #1a4a7c; padding: 12px; border-radius: 12px;
         text-align: center; min-width: 120px; background-color: transparent; flex: 1 1 0;
@@ -48,7 +46,6 @@ st.markdown("""
     .mini-ciro-ay { font-size: 1rem; font-weight: 800; color: var(--text-color); margin-bottom: 5px; }
     .mini-ciro-deger { color: #1a4a7c; font-size: 1.25rem; font-weight: 900; }
 
-    /* KARANLIK MOD AYARLARI */
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
@@ -108,10 +105,8 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
-            # Boşluk temizliği
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
             
-            # TÜRKÇE KARAKTER HATASINI ÇÖZEN YENİ MOTOR (Büyük Harf Eşleşmesi)
             sutun_map = {}
             for col in df.columns:
                 c_upper = col.upper().replace('İ', 'I') 
@@ -123,7 +118,6 @@ if st.session_state['giris_yapildi']:
                 elif "KURUM" in c_upper or "SAHIBI" in c_upper: sutun_map[col] = 'Kurum/Numune Sahibi'
             df.rename(columns=sutun_map, inplace=True)
 
-            # --- GÜVENLİK KONTROLÜ ---
             beklenen_sutunlar = ['Test tarihi', 'Gelen Numune Sayısı', 'İşlenen Numune Sayısı', 'Kurum/Numune Sahibi']
             eksikler = [s for s in beklenen_sutunlar if s not in df.columns]
             if eksikler:
@@ -131,7 +125,6 @@ if st.session_state['giris_yapildi']:
                 st.info(f"💡 Tablonuzdaki algılanan başlıklar şunlar: **{', '.join(df.columns)}**")
                 return pd.DataFrame()
 
-            # Tarih Çevirme ve Formatlama
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
             df = df.dropna(subset=['Test tarihi'])
             
@@ -174,8 +167,14 @@ if st.session_state['giris_yapildi']:
         df = df_yilli[df_yilli['Ay'].isin(secilen_aylar)] if secilen_aylar else df_yilli
         
         st.sidebar.divider()
+        
+        # --- YENİ EKLENEN: MANUEL GÜNCELLEME BUTONU ---
+        if st.sidebar.button("🔄 Verileri Yenile", use_container_width=True):
+            veri_getir.clear() # Önbelleği temizle
+            st.rerun()         # Sayfayı baştan yükle
+            
         col_cikis, col_imza = st.sidebar.columns([1,1])
-        with col_cikis: st.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}))
+        with col_cikis: st.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}), use_container_width=True)
         with col_imza: st.markdown('<div class="imza-alani">AEY</div>', unsafe_allow_html=True)
 
         m1, m2, m3 = st.columns(3)
@@ -194,7 +193,6 @@ if st.session_state['giris_yapildi']:
         f2.metric("💰 Toplam Ciro (KDV Hariç)", f"₺ {toplam_ciro:,.2f}")
         f3.metric("⏳ Bekleyen Tahsilat", f"₺ {bekleyen_tahsilat:,.2f}")
 
-        # --- YENİ EKLENEN: AYLIK CİRO DAĞILIMI (HTML KOD HATASI GİDERİLDİ) ---
         if 'Fatura Tutarı' in df.columns:
             st.markdown("<br><h5 style='text-align:center; font-weight: 800; color: var(--text-color);'>📅 Aylık Ciro Dağılımı</h5>", unsafe_allow_html=True)
             
@@ -202,7 +200,6 @@ if st.session_state['giris_yapildi']:
             aylik_ciro['Ay_Sirasi'] = aylik_ciro['Ay'].apply(lambda x: ay_sirasi.index(x))
             aylik_ciro = aylik_ciro.sort_values('Ay_Sirasi')
             
-            # HTML girintilerini (indentation) sildim, artık kod olarak değil UI olarak görünecek
             html_content = '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 10px;">'
             for _, row in aylik_ciro.iterrows():
                 html_content += f'<div class="mini-ciro-kutu"><div class="mini-ciro-ay">{row["Ay"]}</div><div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.0f}</div></div>'
@@ -285,4 +282,4 @@ if st.session_state['giris_yapildi']:
             fig_test.update_layout(height=700, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_test, use_container_width=True)
 
-        st.caption(f"⚙️ Canlı Veri Bağlantısı Aktif | Son Senkronizasyon: {datetime.datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"⚙️ Son Veri Senkronizasyonu: {datetime.datetime.now().strftime('%H:%M:%S')} (Yenile butonuna basarak güncelleyebilirsiniz)")
