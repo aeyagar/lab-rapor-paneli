@@ -105,9 +105,7 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
-            # 1. Tamamen boş olan satırları en baştan sil
             df = df.dropna(how='all')
-
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
             
             sutun_map = {}
@@ -127,9 +125,7 @@ if st.session_state['giris_yapildi']:
                 st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
                 return pd.DataFrame()
 
-            # --- MUCİZE ÇÖZÜM: BİRLEŞTİRİLMİŞ HÜCRE DOLDURUCU (FORWARD FILL) ---
-            # Test tarihi, Şehir ve Kurum sütunlarındaki alt boşlukları bir üstündeki hücreyle doldurur.
-            # Gelen numune sayısı doldurulmaz (0 kalır) böylece sadece test sayısında artış yakalanır.
+            # --- YOZGAT İÇİN EKLENEN BİRLEŞTİRİCİ KORUNUYOR ---
             sutunlar_ffill = ['Test tarihi', 'Kurum/Numune Sahibi', 'Numunenin Geldiği Şehir']
             for col in sutunlar_ffill:
                 if col in df.columns:
@@ -150,12 +146,16 @@ if st.session_state['giris_yapildi']:
                           7:'Temmuz', 8:'Ağustos', 9:'Eylül', 10:'Ekim', 11:'Kasım', 12:'Aralık'}
             df['Ay'] = df['Test tarihi'].dt.month.map(ay_sozlugu)
             
-            # Sadece rakamları çeken güvenli okuyucu
-            df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0)
-            df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0)
+            # --- HATAYA SEBEP OLAN REGEX SİLİNDİ, DOĞAL SAYI OKUMA GERİ GELDİ ---
+            df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
+            df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
             
+            # Ciro/Fatura için (Eğer tablonuzda 1.500,50 gibi virgüllü tutarlar varsa düzgün okuması için)
             if 'Fatura Tutarı' in df.columns:
-                df['Fatura Tutarı'] = pd.to_numeric(df['Fatura Tutarı'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
+                df['Fatura Tutarı'] = df['Fatura Tutarı'].astype(str).str.replace('TL', '').str.replace('₺', '').str.replace(' ', '')
+                # Eğer Türk usulü noktalı-virgüllü yazıldıysa (1.500,00) onu standart sayıya çevir
+                df['Fatura Tutarı'] = df['Fatura Tutarı'].str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+                df['Fatura Tutarı'] = pd.to_numeric(df['Fatura Tutarı'], errors='coerce').fillna(0)
             
             if 'Tahsilat Durumu' in df.columns: df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
             
