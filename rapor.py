@@ -149,22 +149,17 @@ if st.session_state['giris_yapildi']:
             df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
             df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
             
-            # --- YENİ EKLENEN: AKILLI MUHASEBECİ FONKSİYONU ---
             def para_temizle(deger):
                 try:
                     deger = str(deger)
-                    # Sadece rakam, virgül ve noktayı bırakır
                     deger = re.sub(r'[^\d.,]', '', deger)
                     if not deger: return 0.0
                     
-                    # Hem nokta hem virgül varsa (Örn: 1.500,50)
                     if '.' in deger and ',' in deger:
-                        # Hangisi daha sağdaysa o kuruş ayırıcıdır
                         if deger.rfind(',') > deger.rfind('.'):
-                            deger = deger.replace('.', '').replace(',', '.') # 1500.50 yapar
+                            deger = deger.replace('.', '').replace(',', '.')
                         else:
-                            deger = deger.replace(',', '') # 1500.50 yapar
-                    # Sadece virgül varsa (Örn: 1500,50)
+                            deger = deger.replace(',', '')
                     elif ',' in deger:
                         deger = deger.replace(',', '.')
                         
@@ -233,7 +228,8 @@ if st.session_state['giris_yapildi']:
             
             html_content = '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 10px;">'
             for _, row in aylik_ciro.iterrows():
-                html_content += f'<div class="mini-ciro-kutu"><div class="mini-ciro-ay">{row["Ay"]}</div><div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.0f}</div></div>'
+                # --- VİTRİN DÜZELTMESİ: KURUŞ KISMI (,.2f) EKLENDİ ---
+                html_content += f'<div class="mini-ciro-kutu"><div class="mini-ciro-ay">{row["Ay"]}</div><div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.2f}</div></div>'
             html_content += '</div>'
             st.markdown(html_content, unsafe_allow_html=True)
 
