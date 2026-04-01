@@ -105,6 +105,9 @@ if st.session_state['giris_yapildi']:
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
+            # 1. Tamamen boş olan satırları en baştan sil
+            df = df.dropna(how='all')
+
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
             
             sutun_map = {}
@@ -122,8 +125,19 @@ if st.session_state['giris_yapildi']:
             eksikler = [s for s in beklenen_sutunlar if s not in df.columns]
             if eksikler:
                 st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
-                st.info(f"💡 Tablonuzdaki algılanan başlıklar şunlar: **{', '.join(df.columns)}**")
                 return pd.DataFrame()
+
+            # --- MUCİZE ÇÖZÜM: BİRLEŞTİRİLMİŞ HÜCRE DOLDURUCU (FORWARD FILL) ---
+            # Test tarihi, Şehir ve Kurum sütunlarındaki alt boşlukları bir üstündeki hücreyle doldurur.
+            # Gelen numune sayısı doldurulmaz (0 kalır) böylece sadece test sayısında artış yakalanır.
+            sutunlar_ffill = ['Test tarihi', 'Kurum/Numune Sahibi', 'Numunenin Geldiği Şehir']
+            for col in sutunlar_ffill:
+                if col in df.columns:
+                    df[col] = df[col].ffill()
+
+            if 'Numunenin Geldiği Şehir' in df.columns:
+                df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
+                df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].replace('NAN', 'BİLİNMİYOR')
 
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
             df = df.dropna(subset=['Test tarihi'])
@@ -136,14 +150,14 @@ if st.session_state['giris_yapildi']:
                           7:'Temmuz', 8:'Ağustos', 9:'Eylül', 10:'Ekim', 11:'Kasım', 12:'Aralık'}
             df['Ay'] = df['Test tarihi'].dt.month.map(ay_sozlugu)
             
-            df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
-            df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
+            # Sadece rakamları çeken güvenli okuyucu
+            df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0)
+            df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0)
             
             if 'Fatura Tutarı' in df.columns:
                 df['Fatura Tutarı'] = pd.to_numeric(df['Fatura Tutarı'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
             
             if 'Tahsilat Durumu' in df.columns: df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
-            if 'Numunenin Geldiği Şehir' in df.columns: df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].fillna('Bilinmiyor')
             
             return df
         except Exception as e:
@@ -207,19 +221,14 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- GÜNCELLENEN KISIM: ŞEHİR BAZLI KARŞILAŞTIRMALI NUMUNE GRAFİĞİ ---
         st.subheader("🌍 Şehir ve Tahsilat Dağılımı")
         lok1, lok2 = st.columns(2)
         
         with lok1:
             if 'Numunenin Geldiği Şehir' in df.columns:
-                # Gelen ve İşlenen Numune sayılarını şehir bazında topluyoruz
                 sehir_dagilimi = df.groupby('Numunenin Geldiği Şehir')[['Gelen Numune Sayısı', 'İşlenen Numune Sayısı']].sum().reset_index()
-                
-                # Toplam işlem hacmi (İşlenen Numune) en yüksek olan ilk 10 şehri sıralıyoruz
                 sehir_dagilimi = sehir_dagilimi.sort_values('İşlenen Numune Sayısı', ascending=False).head(10)
                 
-                # Plotly'de yan yana (Grouped) çubuk grafik için veriyi "Melt" (eritme) işlemiyle düzenliyoruz
                 sehir_melt = sehir_dagilimi.melt(id_vars='Numunenin Geldiği Şehir', 
                                                  value_vars=['Gelen Numune Sayısı', 'İşlenen Numune Sayısı'], 
                                                  var_name='Numune Türü', value_name='Adet')
@@ -228,7 +237,6 @@ if st.session_state['giris_yapildi']:
                                    title='Şehir Bazlı Operasyon Hacmi (İlk 10)', text_auto='.0f',
                                    color_discrete_sequence=guncel_liste, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
                 
-                # Gösterge (Legend) kutusunu grafiğin üstüne alarak yer tasarrufu sağlıyoruz
                 fig_sehir.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=""))
                 st.plotly_chart(fig_sehir, use_container_width=True)
