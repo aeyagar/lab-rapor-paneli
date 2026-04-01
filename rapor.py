@@ -168,10 +168,9 @@ if st.session_state['giris_yapildi']:
         
         st.sidebar.divider()
         
-        # --- YENİ EKLENEN: MANUEL GÜNCELLEME BUTONU ---
         if st.sidebar.button("🔄 Verileri Yenile", use_container_width=True):
-            veri_getir.clear() # Önbelleği temizle
-            st.rerun()         # Sayfayı baştan yükle
+            veri_getir.clear()
+            st.rerun()
             
         col_cikis, col_imza = st.sidebar.columns([1,1])
         with col_cikis: st.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}), use_container_width=True)
@@ -208,16 +207,30 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
+        # --- GÜNCELLENEN KISIM: ŞEHİR BAZLI KARŞILAŞTIRMALI NUMUNE GRAFİĞİ ---
         st.subheader("🌍 Şehir ve Tahsilat Dağılımı")
         lok1, lok2 = st.columns(2)
         
         with lok1:
             if 'Numunenin Geldiği Şehir' in df.columns:
-                sehir_dagilimi = df.groupby('Numunenin Geldiği Şehir')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(10)
-                fig_sehir = px.bar(sehir_dagilimi, x='Numunenin Geldiği Şehir', y='Gelen Numune Sayısı', 
-                                   title='En Çok Numune Gönderen Şehirler', text_auto='.0f', color='Gelen Numune Sayısı', 
-                                   color_continuous_scale=guncel_skala, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-                fig_sehir.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                # Gelen ve İşlenen Numune sayılarını şehir bazında topluyoruz
+                sehir_dagilimi = df.groupby('Numunenin Geldiği Şehir')[['Gelen Numune Sayısı', 'İşlenen Numune Sayısı']].sum().reset_index()
+                
+                # Toplam işlem hacmi (İşlenen Numune) en yüksek olan ilk 10 şehri sıralıyoruz
+                sehir_dagilimi = sehir_dagilimi.sort_values('İşlenen Numune Sayısı', ascending=False).head(10)
+                
+                # Plotly'de yan yana (Grouped) çubuk grafik için veriyi "Melt" (eritme) işlemiyle düzenliyoruz
+                sehir_melt = sehir_dagilimi.melt(id_vars='Numunenin Geldiği Şehir', 
+                                                 value_vars=['Gelen Numune Sayısı', 'İşlenen Numune Sayısı'], 
+                                                 var_name='Numune Türü', value_name='Adet')
+                
+                fig_sehir = px.bar(sehir_melt, x='Numunenin Geldiği Şehir', y='Adet', color='Numune Türü', barmode='group',
+                                   title='Şehir Bazlı Operasyon Hacmi (İlk 10)', text_auto='.0f',
+                                   color_discrete_sequence=guncel_liste, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+                
+                # Gösterge (Legend) kutusunu grafiğin üstüne alarak yer tasarrufu sağlıyoruz
+                fig_sehir.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=""))
                 st.plotly_chart(fig_sehir, use_container_width=True)
 
         with lok2:
