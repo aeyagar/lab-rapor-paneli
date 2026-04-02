@@ -89,21 +89,23 @@ def pdf_olustur(df_filtreli):
         return str(text).translate(str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU"))
 
     def pdf_kategori_bul(test_adi):
+        # Tüm Türkçe karakterleri İngilizce eşdeğerlerine çevirerek aramayı kusursuz yapıyoruz
         t = str(test_adi).upper()
+        t = t.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
+        
         if "PCR" in t: 
             return "Yapilan PCR Testleri"
-        elif any(x in t for x in ["EKIM", "EKİM", "ANTIBIYOGRAM", "ANTİBİYOGRAM", "TOTAL BAKTERI", "TOTAL BAKTERİ"]): 
+        elif any(x in t for x in ["EKIM", "ANTIBIYOGRAM", "TOTAL BAKTERI"]): 
             return "Bakteriyolojik Testler"
         elif any(x in t for x in ["SAT", "BRUCELLA", "ROSE BENGAL"]): 
             return "Brucella Serolojik Testleri"
-        elif any(x in t for x in ["TB FERON", "MBOVIS", "M. BOVIS", "M.BOVIS"]): 
+        elif any(x in t for x in ["TB FERON", "FERON", "MBOVIS", "M. BOVIS", "M.BOVIS", "BOVIS"]): 
             return "Tuberkuloz Testleri"
-        elif "ARASTIRMA" in t or "ARAŞTIRMA" in t: 
+        elif "ARASTIRMA" in t: 
             return "Arastirma Testleri"
         else: 
             return "Diger Serolojik Analizler"
 
-    # Rapordaki testlerin alt açıklamaları (parantez içi)
     grup_aciklamalari = {
         "Yapilan PCR Testleri": "(Tum PCR icerikli analizler)",
         "Bakteriyolojik Testler": "(Bakteriyolojik Ekim, Antibiyogram, Total Bakteri vb.)",
@@ -123,38 +125,35 @@ def pdf_olustur(df_filtreli):
     pdf.add_page()
     
     # 🎨 KURUMSAL BAŞLIK
-    pdf.set_fill_color(26, 74, 124) # Lacivert Arka Plan
-    pdf.set_text_color(255, 255, 255) # Beyaz Yazı
+    pdf.set_fill_color(26, 74, 124) 
+    pdf.set_text_color(255, 255, 255) 
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 15, tr_temizle("DIAGEN LABORATUVARI ANALIZ RAPORU"), ln=True, align='C', fill=True)
     
-    pdf.set_text_color(100, 100, 100) # Gri Alt Başlık
+    pdf.set_text_color(100, 100, 100) 
     pdf.set_font("Arial", 'I', 10)
     pdf.cell(0, 8, tr_temizle(f"Rapor Uretim Tarihi: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align='R')
     pdf.ln(5)
 
     # 📊 1. YILLIK GENEL ÖZET
-    pdf.set_text_color(0, 0, 0) # Siyah Yazı
-    pdf.set_fill_color(230, 240, 250) # Açık Mavi Şerit
+    pdf.set_text_color(0, 0, 0) 
+    pdf.set_fill_color(230, 240, 250) 
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, tr_temizle(" DONEMSEL GENEL TOPLAM HAVA DURUMU"), ln=True, fill=True)
     pdf.ln(3)
 
-    # Toplam Numune Kutuları (Tablo gibi yan yana)
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(95, 10, tr_temizle(f" Toplam Gelen Numune : {int(df_pdf['Gelen Numune Sayısı'].sum())} Adet"), border=1)
     pdf.cell(95, 10, tr_temizle(f" Toplam Islenen Numune: {int(df_pdf['İşlenen Numune Sayısı'].sum())} Adet"), border=1, ln=True)
     pdf.ln(5)
     
-    # Kategori Tablosu Başlığı
-    pdf.set_fill_color(200, 200, 200) # Gri Tablo Başlığı
+    pdf.set_fill_color(200, 200, 200) 
     pdf.set_font("Arial", 'B', 9)
     pdf.cell(50, 8, tr_temizle("Test Grubu"), border=1, fill=True)
     pdf.cell(115, 8, tr_temizle("Grup Icerigi"), border=1, fill=True)
     pdf.cell(25, 8, tr_temizle("Toplam (Adet)"), border=1, align='C', fill=True)
     pdf.ln()
 
-    # Kategori Tablosu İçeriği
     pdf.set_font("Arial", '', 9)
     if 'Yapılan Test' in df_pdf.columns:
         genel_grup = df_pdf.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
@@ -184,12 +183,10 @@ def pdf_olustur(df_filtreli):
         if islenen_toplam == 0 and gelen_toplam == 0:
             continue
 
-        # Ay Başlığı ve Özet (Tek satır kutu)
         pdf.set_fill_color(240, 240, 240)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(190, 8, tr_temizle(f" [{ay.upper()} AYI]  |  Gelen: {gelen_toplam} Numune  -  Islenen: {islenen_toplam} Test"), border=1, ln=True, fill=True)
         
-        # Ay İçi Tablo İçeriği
         pdf.set_font("Arial", '', 9)
         if 'Yapılan Test' in df_ay.columns:
             aylik_grup = df_ay.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
