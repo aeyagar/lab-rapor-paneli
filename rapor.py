@@ -78,18 +78,16 @@ if not st.session_state['giris_yapildi']:
                     st.rerun()
                 else: st.error("❌ Bilgiler hatalı!")
 
-# --- PDF ÜRETME MOTORU (SADECE RAPORA ÖZEL VERİ İŞLEME) ---
+# --- GELİŞMİŞ TASARIMLI PDF MOTORU ---
 def pdf_olustur(df_filtreli):
     try:
         from fpdf import FPDF
     except ImportError:
-        return None # Eğer fpdf yüklü değilse uyarı verdirmek için
+        return None 
 
-    # FPDF standart fontları Türkçe desteklemediği için harfleri dönüştüren güvenlik kilidi
     def tr_temizle(text):
         return str(text).translate(str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU"))
 
-    # Sizin belirlediğiniz özel PDF gruplama mantığı
     def pdf_kategori_bul(test_adi):
         t = str(test_adi).upper()
         if "PCR" in t: 
@@ -105,7 +103,16 @@ def pdf_olustur(df_filtreli):
         else: 
             return "Diger Serolojik Analizler"
 
-    # UI etkilenmesin diye dataframe'in kopyası üzerinden çalışıyoruz
+    # Rapordaki testlerin alt açıklamaları (parantez içi)
+    grup_aciklamalari = {
+        "Yapilan PCR Testleri": "(Tum PCR icerikli analizler)",
+        "Bakteriyolojik Testler": "(Bakteriyolojik Ekim, Antibiyogram, Total Bakteri vb.)",
+        "Brucella Serolojik Testleri": "(SAT, Brucella Ab, Rose Bengal vb.)",
+        "Tuberkuloz Testleri": "(TB Feron, M. Bovis Ab vb.)",
+        "Arastirma Testleri": "(Arastirma icerikli analizler)",
+        "Diger Serolojik Analizler": "(Yukari gruplar disindaki diger tum testler)"
+    }
+
     df_pdf = df_filtreli.copy()
     if 'Yapılan Test' in df_pdf.columns:
         df_pdf['PDF_Grup'] = df_pdf['Yapılan Test'].apply(pdf_kategori_bul)
@@ -115,36 +122,54 @@ def pdf_olustur(df_filtreli):
     pdf = FPDF()
     pdf.add_page()
     
-    # Başlık Alanı
+    # 🎨 KURUMSAL BAŞLIK
+    pdf.set_fill_color(26, 74, 124) # Lacivert Arka Plan
+    pdf.set_text_color(255, 255, 255) # Beyaz Yazı
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, tr_temizle("DIAGEN LABORATUVARI ANALIZ RAPORU"), ln=True, align='C')
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 8, tr_temizle(f"Rapor TARIHI: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align='C')
-    pdf.line(10, 30, 200, 30)
-    pdf.ln(8)
-
-    # 1. YILLIK GENEL ÖZET
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, tr_temizle("--- DONEMSEL GENEL TOPLAM ---"), ln=True)
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 7, tr_temizle(f"* Toplam Gelen Numune Sayisi : {int(df_pdf['Gelen Numune Sayısı'].sum())} Adet"), ln=True)
-    pdf.cell(0, 7, tr_temizle(f"* Toplam Islenen Numune Sayisi: {int(df_pdf['İşlenen Numune Sayısı'].sum())} Adet"), ln=True)
-    pdf.ln(4)
+    pdf.cell(0, 15, tr_temizle("DIAGEN LABORATUVARI ANALIZ RAPORU"), ln=True, align='C', fill=True)
     
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(0, 7, tr_temizle("Islem Gruplari Dagilimi:"), ln=True)
-    pdf.set_font("Arial", '', 11)
+    pdf.set_text_color(100, 100, 100) # Gri Alt Başlık
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 8, tr_temizle(f"Rapor Uretim Tarihi: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align='R')
+    pdf.ln(5)
+
+    # 📊 1. YILLIK GENEL ÖZET
+    pdf.set_text_color(0, 0, 0) # Siyah Yazı
+    pdf.set_fill_color(230, 240, 250) # Açık Mavi Şerit
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, tr_temizle(" DONEMSEL GENEL TOPLAM HAVA DURUMU"), ln=True, fill=True)
+    pdf.ln(3)
+
+    # Toplam Numune Kutuları (Tablo gibi yan yana)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(95, 10, tr_temizle(f" Toplam Gelen Numune : {int(df_pdf['Gelen Numune Sayısı'].sum())} Adet"), border=1)
+    pdf.cell(95, 10, tr_temizle(f" Toplam Islenen Numune: {int(df_pdf['İşlenen Numune Sayısı'].sum())} Adet"), border=1, ln=True)
+    pdf.ln(5)
+    
+    # Kategori Tablosu Başlığı
+    pdf.set_fill_color(200, 200, 200) # Gri Tablo Başlığı
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(50, 8, tr_temizle("Test Grubu"), border=1, fill=True)
+    pdf.cell(115, 8, tr_temizle("Grup Icerigi"), border=1, fill=True)
+    pdf.cell(25, 8, tr_temizle("Toplam (Adet)"), border=1, align='C', fill=True)
+    pdf.ln()
+
+    # Kategori Tablosu İçeriği
+    pdf.set_font("Arial", '', 9)
     if 'Yapılan Test' in df_pdf.columns:
         genel_grup = df_pdf.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
         for _, satir in genel_grup.iterrows():
             if satir['İşlenen Numune Sayısı'] > 0:
-                pdf.cell(0, 7, tr_temizle(f"  > {satir['PDF_Grup']}: {int(satir['İşlenen Numune Sayısı'])} Adet"), ln=True)
-    pdf.line(10, pdf.get_y()+5, 200, pdf.get_y()+5)
+                pdf.cell(50, 8, tr_temizle(satir['PDF_Grup']), border=1)
+                pdf.cell(115, 8, tr_temizle(grup_aciklamalari.get(satir['PDF_Grup'], "")), border=1)
+                pdf.cell(25, 8, str(int(satir['İşlenen Numune Sayısı'])), border=1, align='C')
+                pdf.ln()
     pdf.ln(10)
 
-    # 2. AYLIK DETAYLI DÖKÜM
+    # 📅 2. AYLIK DETAYLI DÖKÜM TABLOLARI
+    pdf.set_fill_color(230, 240, 250)
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, tr_temizle("--- AYLIK DETAYLI ANALIZ ---"), ln=True)
+    pdf.cell(0, 10, tr_temizle(" AYLIK DETAYLI NUMUNE VE TEST ANALIZI"), ln=True, fill=True)
     pdf.ln(3)
 
     ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
@@ -157,27 +182,31 @@ def pdf_olustur(df_filtreli):
         islenen_toplam = int(df_ay['İşlenen Numune Sayısı'].sum())
         
         if islenen_toplam == 0 and gelen_toplam == 0:
-            continue # Verisi olmayan ayları atla
+            continue
 
-        pdf.set_font("Arial", 'B', 11)
-        pdf.cell(0, 8, tr_temizle(f"[{ay.upper()} AYI]"), ln=True)
+        # Ay Başlığı ve Özet (Tek satır kutu)
+        pdf.set_fill_color(240, 240, 240)
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(190, 8, tr_temizle(f" [{ay.upper()} AYI]  |  Gelen: {gelen_toplam} Numune  -  Islenen: {islenen_toplam} Test"), border=1, ln=True, fill=True)
         
-        pdf.set_font("Arial", '', 10)
-        pdf.cell(0, 6, tr_temizle(f"Gelen Numune: {gelen_toplam} | Islenen Numune: {islenen_toplam}"), ln=True)
-        
+        # Ay İçi Tablo İçeriği
+        pdf.set_font("Arial", '', 9)
         if 'Yapılan Test' in df_ay.columns:
             aylik_grup = df_ay.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
             for _, satir in aylik_grup.iterrows():
                 if satir['İşlenen Numune Sayısı'] > 0:
-                    pdf.cell(0, 6, tr_temizle(f"  - {satir['PDF_Grup']}: {int(satir['İşlenen Numune Sayısı'])} Adet"), ln=True)
+                    pdf.cell(50, 6, tr_temizle(satir['PDF_Grup']), border='L,B')
+                    pdf.cell(115, 6, tr_temizle(grup_aciklamalari.get(satir['PDF_Grup'], "")), border='B')
+                    pdf.cell(25, 6, str(int(satir['İşlenen Numune Sayısı'])), border='R,B', align='C')
+                    pdf.ln()
         pdf.ln(5)
 
     try:
-        return bytes(pdf.output()) # fpdf2 için
+        return bytes(pdf.output()) 
     except Exception:
-        return pdf.output(dest='S').encode('latin-1') # fpdf(legacy) için
+        return pdf.output(dest='S').encode('latin-1')
 
-
+# --- SİSTEM UYGULAMA KODLARI ---
 if st.session_state['giris_yapildi']:
     st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
@@ -297,7 +326,6 @@ if st.session_state['giris_yapildi']:
         
         st.sidebar.divider()
 
-        # --- YENİ: PDF RAPOR BUTONU ---
         st.sidebar.markdown("### 📄 Raporlama")
         pdf_verisi = pdf_olustur(df)
         if pdf_verisi:
