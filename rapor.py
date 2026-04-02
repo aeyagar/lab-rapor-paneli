@@ -78,6 +78,106 @@ if not st.session_state['giris_yapildi']:
                     st.rerun()
                 else: st.error("❌ Bilgiler hatalı!")
 
+# --- PDF ÜRETME MOTORU (SADECE RAPORA ÖZEL VERİ İŞLEME) ---
+def pdf_olustur(df_filtreli):
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None # Eğer fpdf yüklü değilse uyarı verdirmek için
+
+    # FPDF standart fontları Türkçe desteklemediği için harfleri dönüştüren güvenlik kilidi
+    def tr_temizle(text):
+        return str(text).translate(str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU"))
+
+    # Sizin belirlediğiniz özel PDF gruplama mantığı
+    def pdf_kategori_bul(test_adi):
+        t = str(test_adi).upper()
+        if "PCR" in t: 
+            return "Yapilan PCR Testleri"
+        elif any(x in t for x in ["EKIM", "EKİM", "ANTIBIYOGRAM", "ANTİBİYOGRAM", "TOTAL BAKTERI", "TOTAL BAKTERİ"]): 
+            return "Bakteriyolojik Testler"
+        elif any(x in t for x in ["SAT", "BRUCELLA", "ROSE BENGAL"]): 
+            return "Brucella Serolojik Testleri"
+        elif any(x in t for x in ["TB FERON", "MBOVIS", "M. BOVIS", "M.BOVIS"]): 
+            return "Tuberkuloz Testleri"
+        elif "ARASTIRMA" in t or "ARAŞTIRMA" in t: 
+            return "Arastirma Testleri"
+        else: 
+            return "Diger Serolojik Analizler"
+
+    # UI etkilenmesin diye dataframe'in kopyası üzerinden çalışıyoruz
+    df_pdf = df_filtreli.copy()
+    if 'Yapılan Test' in df_pdf.columns:
+        df_pdf['PDF_Grup'] = df_pdf['Yapılan Test'].apply(pdf_kategori_bul)
+    else:
+        df_pdf['PDF_Grup'] = "Diger Serolojik Analizler"
+
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Başlık Alanı
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, tr_temizle("DIAGEN LABORATUVARI ANALIZ RAPORU"), ln=True, align='C')
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 8, tr_temizle(f"Rapor TARIHI: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align='C')
+    pdf.line(10, 30, 200, 30)
+    pdf.ln(8)
+
+    # 1. YILLIK GENEL ÖZET
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, tr_temizle("--- DONEMSEL GENEL TOPLAM ---"), ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 7, tr_temizle(f"* Toplam Gelen Numune Sayisi : {int(df_pdf['Gelen Numune Sayısı'].sum())} Adet"), ln=True)
+    pdf.cell(0, 7, tr_temizle(f"* Toplam Islenen Numune Sayisi: {int(df_pdf['İşlenen Numune Sayısı'].sum())} Adet"), ln=True)
+    pdf.ln(4)
+    
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 7, tr_temizle("Islem Gruplari Dagilimi:"), ln=True)
+    pdf.set_font("Arial", '', 11)
+    if 'Yapılan Test' in df_pdf.columns:
+        genel_grup = df_pdf.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
+        for _, satir in genel_grup.iterrows():
+            if satir['İşlenen Numune Sayısı'] > 0:
+                pdf.cell(0, 7, tr_temizle(f"  > {satir['PDF_Grup']}: {int(satir['İşlenen Numune Sayısı'])} Adet"), ln=True)
+    pdf.line(10, pdf.get_y()+5, 200, pdf.get_y()+5)
+    pdf.ln(10)
+
+    # 2. AYLIK DETAYLI DÖKÜM
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, tr_temizle("--- AYLIK DETAYLI ANALIZ ---"), ln=True)
+    pdf.ln(3)
+
+    ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+    mevcut_aylar = df_pdf['Ay'].unique()
+    sirali_aylar = sorted(mevcut_aylar, key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
+
+    for ay in sirali_aylar:
+        df_ay = df_pdf[df_pdf['Ay'] == ay]
+        gelen_toplam = int(df_ay['Gelen Numune Sayısı'].sum())
+        islenen_toplam = int(df_ay['İşlenen Numune Sayısı'].sum())
+        
+        if islenen_toplam == 0 and gelen_toplam == 0:
+            continue # Verisi olmayan ayları atla
+
+        pdf.set_font("Arial", 'B', 11)
+        pdf.cell(0, 8, tr_temizle(f"[{ay.upper()} AYI]"), ln=True)
+        
+        pdf.set_font("Arial", '', 10)
+        pdf.cell(0, 6, tr_temizle(f"Gelen Numune: {gelen_toplam} | Islenen Numune: {islenen_toplam}"), ln=True)
+        
+        if 'Yapılan Test' in df_ay.columns:
+            aylik_grup = df_ay.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
+            for _, satir in aylik_grup.iterrows():
+                if satir['İşlenen Numune Sayısı'] > 0:
+                    pdf.cell(0, 6, tr_temizle(f"  - {satir['PDF_Grup']}: {int(satir['İşlenen Numune Sayısı'])} Adet"), ln=True)
+        pdf.ln(5)
+
+    try:
+        return bytes(pdf.output()) # fpdf2 için
+    except Exception:
+        return pdf.output(dest='S').encode('latin-1') # fpdf(legacy) için
+
+
 if st.session_state['giris_yapildi']:
     st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
@@ -135,7 +235,6 @@ if st.session_state['giris_yapildi']:
                 df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
                 df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].replace('NAN', 'BİLİNMİYOR')
 
-            # --- YENİ: TEST İSİMLERİNDEKİ BOŞLUKLARI TEMİZLE (SAT ve SAT ayrımını engeller) ---
             if 'Yapılan Test' in df.columns:
                 df['Yapılan Test'] = df['Yapılan Test'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
                 df['Yapılan Test'] = df['Yapılan Test'].replace('NAN', 'BİLİNMEYEN TEST')
@@ -159,7 +258,6 @@ if st.session_state['giris_yapildi']:
                     deger = str(deger)
                     deger = re.sub(r'[^\d.,]', '', deger)
                     if not deger: return 0.0
-                    
                     if '.' in deger and ',' in deger:
                         if deger.rfind(',') > deger.rfind('.'):
                             deger = deger.replace('.', '').replace(',', '.')
@@ -167,7 +265,6 @@ if st.session_state['giris_yapildi']:
                             deger = deger.replace(',', '')
                     elif ',' in deger:
                         deger = deger.replace(',', '.')
-                        
                     return float(deger)
                 except:
                     return 0.0
@@ -199,7 +296,22 @@ if st.session_state['giris_yapildi']:
         df = df_yilli[df_yilli['Ay'].isin(secilen_aylar)] if secilen_aylar else df_yilli
         
         st.sidebar.divider()
-        
+
+        # --- YENİ: PDF RAPOR BUTONU ---
+        st.sidebar.markdown("### 📄 Raporlama")
+        pdf_verisi = pdf_olustur(df)
+        if pdf_verisi:
+            st.sidebar.download_button(
+                label="📥 Ozet Raporu PDF Indir",
+                data=pdf_verisi,
+                file_name=f"Diagen_Analiz_Raporu_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        else:
+            st.sidebar.error("PDF için 'pip install fpdf' gereklidir.")
+
+        st.sidebar.divider()
         if st.sidebar.button("🔄 Verileri Yenile", use_container_width=True):
             veri_getir.clear()
             st.rerun()
@@ -313,14 +425,9 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
-        # --- YENİ: TÜM TESTLERİ GÖSTEREN DİNAMİK HUNİ GRAFİĞİ ---
         if 'Yapılan Test' in df.columns:
-            # head() kısıtlaması kaldırıldı, tüm testler alındı
             test_dagilimi = df.groupby('Yapılan Test')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False)
-            
-            # Dinamik yükseklik: Ne kadar çok test varsa o kadar uzun bir grafik çizilsin ki yazılar birbirine girmesin
             grafik_boyu = max(600, len(test_dagilimi) * 35)
-            
             fig_test = px.funnel(test_dagilimi, x='İşlenen Numune Sayısı', y='Yapılan Test', 
                                  title='Çalışılan Tüm Test Panelleri', color_discrete_sequence=guncel_liste,
                                  template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
