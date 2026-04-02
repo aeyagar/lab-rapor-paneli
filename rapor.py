@@ -135,6 +135,11 @@ if st.session_state['giris_yapildi']:
                 df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
                 df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].replace('NAN', 'BİLİNMİYOR')
 
+            # --- YENİ: TEST İSİMLERİNDEKİ BOŞLUKLARI TEMİZLE (SAT ve SAT ayrımını engeller) ---
+            if 'Yapılan Test' in df.columns:
+                df['Yapılan Test'] = df['Yapılan Test'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
+                df['Yapılan Test'] = df['Yapılan Test'].replace('NAN', 'BİLİNMEYEN TEST')
+
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
             df = df.dropna(subset=['Test tarihi'])
             
@@ -228,7 +233,6 @@ if st.session_state['giris_yapildi']:
             
             html_content = '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 10px;">'
             for _, row in aylik_ciro.iterrows():
-                # --- VİTRİN DÜZELTMESİ: KURUŞ KISMI (,.2f) EKLENDİ ---
                 html_content += f'<div class="mini-ciro-kutu"><div class="mini-ciro-ay">{row["Ay"]}</div><div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.2f}</div></div>'
             html_content += '</div>'
             st.markdown(html_content, unsafe_allow_html=True)
@@ -309,12 +313,18 @@ if st.session_state['giris_yapildi']:
 
         st.divider()
 
+        # --- YENİ: TÜM TESTLERİ GÖSTEREN DİNAMİK HUNİ GRAFİĞİ ---
         if 'Yapılan Test' in df.columns:
-            test_dagilimi = df.groupby('Yapılan Test')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False).head(20)
+            # head() kısıtlaması kaldırıldı, tüm testler alındı
+            test_dagilimi = df.groupby('Yapılan Test')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False)
+            
+            # Dinamik yükseklik: Ne kadar çok test varsa o kadar uzun bir grafik çizilsin ki yazılar birbirine girmesin
+            grafik_boyu = max(600, len(test_dagilimi) * 35)
+            
             fig_test = px.funnel(test_dagilimi, x='İşlenen Numune Sayısı', y='Yapılan Test', 
-                                 title='En Çok Çalışılan Test Panelleri (İlk 20)', color_discrete_sequence=guncel_liste,
+                                 title='Çalışılan Tüm Test Panelleri', color_discrete_sequence=guncel_liste,
                                  template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-            fig_test.update_layout(height=700, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            fig_test.update_layout(height=grafik_boyu, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_test, use_container_width=True)
 
         st.caption(f"⚙️ Son Veri Senkronizasyonu: {datetime.datetime.now().strftime('%H:%M:%S')} (Yenile butonuna basarak güncelleyebilirsiniz)")
