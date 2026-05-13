@@ -235,15 +235,20 @@ if st.session_state['giris_yapildi']:
             df = df.dropna(how='all')
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
             
+            # --- YENİ EKLENEN HARİTALAMA (Test Zamanı / Test Tarihi duyarlılığı) ---
             sutun_map = {}
             for col in df.columns:
-                c_upper = col.upper().replace('İ', 'I') 
-                if "IŞLENEN" in c_upper or "ISLENEN" in c_upper: sutun_map[col] = 'İşlenen Numune Sayısı'
+                c_upper = col.upper().replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ğ', 'G').replace('Ü', 'U').replace('Ö', 'O')
+                
+                if "ISLENEN" in c_upper: sutun_map[col] = 'İşlenen Numune Sayısı'
                 elif "YAPILAN" in c_upper: sutun_map[col] = 'Yapılan Test'
                 elif "FATURA" in c_upper and "TUTAR" in c_upper: sutun_map[col] = 'Fatura Tutarı'
                 elif "TAHSILAT" in c_upper: sutun_map[col] = 'Tahsilat Durumu'
-                elif "ŞEHIR" in c_upper or "SEHIR" in c_upper: sutun_map[col] = 'Numunenin Geldiği Şehir'
+                elif "SEHIR" in c_upper: sutun_map[col] = 'Numunenin Geldiği Şehir'
                 elif "KURUM" in c_upper or "SAHIBI" in c_upper: sutun_map[col] = 'Kurum/Numune Sahibi'
+                elif "TEST" in c_upper and ("TARIH" in c_upper or "ZAMAN" in c_upper): sutun_map[col] = 'Test tarihi'
+                elif "GELEN" in c_upper and "NUMUNE" in c_upper: sutun_map[col] = 'Gelen Numune Sayısı'
+            
             df.rename(columns=sutun_map, inplace=True)
 
             beklenen_sutunlar = ['Test tarihi', 'Gelen Numune Sayısı', 'İşlenen Numune Sayısı', 'Kurum/Numune Sahibi']
