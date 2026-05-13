@@ -105,30 +105,10 @@ def adjust_start_time(dt):
     return dt
 
 def tat_hesapla(row):
-    gelis = row.get('Numune Geliş Zamanı')
-    test = row.get('Test tarihi')
-    
-    if pd.isna(gelis) or pd.isna(test):
-        return pd.Series([None, "Zaman Verisi Eksik", None])
-        
-    if gelis < pd.to_datetime('2026-05-06'):
-        return pd.Series(["SLA Öncesi", "Kapsam Dışı", None])
-        
-    gelis_adj = adjust_start_time(gelis)
-    
-    try:
-        gun_farki = np.busday_count(
-            gelis_adj.date(), 
-            test.date(), 
-            holidays=tat_tatiller
-        )
-        if gun_farki < 0: gun_farki = 0
-    except:
-        return pd.Series([None, "Hatalı Tarih", None])
-        
     test_adi = str(row.get('Yapılan Test', '')).upper()
     test_adi = test_adi.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
     
+    # Hata da verse kategori bilinsin ki şeffaf rapor verebilelim
     if "PCR" in test_adi:
         kategori = "Moleküler Test (Hedef: 3 Gün)"
         hedef = 3
@@ -138,9 +118,25 @@ def tat_hesapla(row):
     else:
         kategori = "Serolojik Test (Hedef: 3 Gün)"
         hedef = 3
+
+    gelis = row.get('Numune Geliş Zamanı')
+    test = row.get('Test tarihi')
+    
+    if pd.isna(gelis) or pd.isna(test):
+        return pd.Series([kategori, "Zaman Verisi Eksik", None])
         
-    durum = "Hedef İçi" if gun_farki <= hedef else "Gecikmeli"
-    return pd.Series([kategori, durum, gun_farki])
+    if gelis < pd.to_datetime('2026-05-06'):
+        return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None])
+        
+    gelis_adj = adjust_start_time(gelis)
+    
+    try:
+        gun_farki = np.busday_count(gelis_adj.date(), test.date(), holidays=tat_tatiller)
+        if gun_farki < 0: gun_farki = 0
+        durum = "Hedef İçi" if gun_farki <= hedef else "Gecikmeli"
+        return pd.Series([kategori, durum, gun_farki])
+    except:
+        return pd.Series([kategori, "Hatalı Tarih", None])
 
 # --- GELİŞMİŞ TASARIMLI PDF MOTORU ---
 def pdf_olustur(df_filtreli):
@@ -327,6 +323,9 @@ if st.session_state['giris_yapildi']:
                 st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
                 return pd.DataFrame()
 
+            # AGRESİF TEMİZLİK: Görünmez boşlukları (space) ve tam boş stringleri Gerçek NaN yapar (Birleşmiş hücre bug'ını çözer)
+            df.replace(r'^\s*$', np.nan, regex=True, inplace=True)
+
             sutunlar_ffill = ['Test tarihi', 'Numune Geliş Zamanı', 'Kurum/Numune Sahibi', 'Numunenin Geldiği Şehir']
             for col in sutunlar_ffill:
                 if col in df.columns:
@@ -340,7 +339,6 @@ if st.session_state['giris_yapildi']:
                 df['Yapılan Test'] = df['Yapılan Test'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
                 df['Yapılan Test'] = df['Yapılan Test'].replace('NAN', 'BİLİNMEYEN TEST')
 
-            # --- YENİ EKLENEN TARİH DÜZELTME MOTORU (14.30'u 14:30 yapar) ---
             def tarih_saat_duzelt(x):
                 if pd.isna(x) or str(x).strip().lower() == 'nan': return np.nan
                 val = str(x).strip()
@@ -460,7 +458,7 @@ if st.session_state['giris_yapildi']:
 
         if 'TAT_Durum' in df.columns:
             st.divider()
-            st.subheader("🎯 Operasyonel Hedef (SLA) Analizi")
+            st.subheader("🎯 Operasyonel Hedef (SLA) Analizi (6 Mayıs Sonrası)")
             
             tat_gecerli = df[df['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])]
             
@@ -472,7 +470,7 @@ if st.session_state['giris_yapildi']:
                     tat_ozet.columns = ['Durum', 'Adet']
                     
                     fig_tat1 = px.pie(tat_ozet, values='Adet', names='Durum', hole=0.5,
-                                      title='6 Mayıs Sonrası Sonuçlandırma Performansı',
+                                      title='Genel Numune Sonuçlandırma Performansı',
                                       color='Durum', color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
                                       template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
                     fig_tat1.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
@@ -487,7 +485,23 @@ if st.session_state['giris_yapildi']:
                     fig_tat2.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="")
                     st.plotly_chart(fig_tat2, use_container_width=True)
             else:
-                st.info("ℹ️ 6 Mayıs ve sonrası için henüz performans analizi yapacak yeterli veri bulunmuyor.")
+                st.info("ℹ️ 6 Mayıs ve sonrası için henüz performans analizi yapacak geçerli veri bulunmuyor.")
+
+            # --- ŞEFFAFLIK RAPORU / BİLGİLENDİRME KUTUSU ---
+            hatali_veya_eksik = df[df['TAT_Durum'].isin(['Zaman Verisi Eksik', 'Hatalı Tarih'])]
+            eski_kayitlar = df[df['TAT_Durum'] == '6 Mayıs Öncesi (Kapsam Dışı)']
+            
+            detay_mesaji = []
+            if not eski_kayitlar.empty:
+                detay_mesaji.append(f"**{len(eski_kayitlar)} adet test** numune gelişi 6 Mayıs'tan önce olduğu için SLA hesabından hariç tutulmuştur.")
+            if not hatali_veya_eksik.empty:
+                # Sadece eksik verilerin hangi gruba ait olduğunu özetleyelim
+                eksik_ozet = hatali_veya_eksik.groupby('TAT_Kategori').size().to_dict()
+                ozet_metni = ", ".join([f"{k}: {v} adet" for k, v in eksik_ozet.items()])
+                detay_mesaji.append(f"**{len(hatali_veya_eksik)} adet testin** geliş/sonuç saati Excel'de tamamen boş veya hatalı formatta olduğu için hedefleri ölçülemedi. *(Eksik Dağılımı: {ozet_metni})*")
+                
+            if detay_mesaji:
+                st.warning("⚠️ **SLA Hesaplama Kapsam Dışı Bilgilendirmesi:**\n" + "\n".join([f"- {msg}" for msg in detay_mesaji]))
 
         if 'Fatura Tutarı' in df.columns:
             st.markdown("<br><h5 style='text-align:center; font-weight: 800; color: var(--text-color);'>📅 Aylık Ciro Dağılımı</h5>", unsafe_allow_html=True)
