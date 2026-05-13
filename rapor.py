@@ -7,7 +7,6 @@ import datetime
 import os
 import re
 import numpy as np
-import time
 
 # Resmi tatil takvimi için
 try:
@@ -296,8 +295,8 @@ if st.session_state['giris_yapildi']:
         try:
             sheet_url = "https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing"
             
-            # --- GOOGLE CACHE BUSTER: Google'ın bekleme huyunu iptal eder ---
-            csv_url = sheet_url.replace('/edit?usp=sharing', f'/export?format=csv&gid=0&_cb={int(time.time())}')
+            # --- HTTP 400 Hatasını önlemek için standart export formatı kullanıldı ---
+            csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
             df = df.dropna(how='all')
@@ -348,12 +347,12 @@ if st.session_state['giris_yapildi']:
             def tarih_saat_duzelt(x):
                 if pd.isna(x) or str(x).strip().lower() in ['nan', 'nat', '', '-', 'null']: return np.nan
                 val = str(x).strip()
-                val = re.sub(r'\s+', ' ', val) # Fazla boşlukları tek boşluğa indirger
-                val = val.replace('/', '.') # Eğik çizgi hatasını çözer
-                val = val.replace(',', '.') # Virgül hatasını çözer
+                val = re.sub(r'\s+', ' ', val) 
+                val = val.replace('/', '.') 
+                val = val.replace(',', '.') 
                 if ' ' in val:
                     d_part, t_part = val.split(' ', 1)
-                    t_part = t_part.replace('.', ':') # Saatteki noktayı iki noktaya çevirir
+                    t_part = t_part.replace('.', ':') 
                     return f"{d_part} {t_part}"
                 return val
 
@@ -507,7 +506,6 @@ if st.session_state['giris_yapildi']:
                 eksik_ozet = hatali_veya_eksik.groupby('TAT_Kategori').size().to_dict()
                 ozet_metni = ", ".join([f"{k}: {v} adet" for k, v in eksik_ozet.items()])
                 
-                # İsimleri toparlayıp gösterelim
                 kimler = hatali_veya_eksik['Kurum/Numune Sahibi'].dropna().unique()
                 kimler_str = ", ".join(kimler[:4])
                 if len(kimler) > 4: kimler_str += " ve diğerleri..."
