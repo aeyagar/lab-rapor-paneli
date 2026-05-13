@@ -89,69 +89,67 @@ if not st.session_state['giris_yapildi']:
 
 # --- SLA ZAMAN HESAPLAMA MOTORU ---
 def adjust_start_time(dt):
-    if pd.isna(dt):
-        return dt
-
-    # Hafta sonu geldiyse sonraki pazartesi 08:00 kabul et
+    if pd.isna(dt): return dt
     if dt.weekday() >= 5:
-        days_to_add = 7 - dt.weekday()
+        days_to_add = 7 - dt.weekday() 
         dt = dt + pd.Timedelta(days=days_to_add)
         dt = dt.replace(hour=8, minute=0, second=0)
     else:
-        # Mesai sonrası geldiyse sonraki iş günü 08:00 kabul et
         if dt.hour >= 18:
             dt = dt + pd.Timedelta(days=1)
             if dt.weekday() == 5:
                 dt = dt + pd.Timedelta(days=2)
-            elif dt.weekday() == 6:
-                dt = dt + pd.Timedelta(days=1)
             dt = dt.replace(hour=8, minute=0, second=0)
-
-        # Mesai öncesi geldiyse aynı gün 08:00 kabul et
         elif dt.hour < 8:
             dt = dt.replace(hour=8, minute=0, second=0)
-
     return dt
 
-def test_kategorisi_bul(test_adi):
+def tat_hesapla(row):
     """
-    SLA hedef kategorisini belirler.
-    İstenen mantık:
-    - Yapılan Test içinde PCR veya DNA varsa Moleküler Test
-    - Ekim, Bakteri, Total Bakteri, Bakteriyolojik, Antibiyogram varsa Bakteriyolojik Test
-    - Diğer tüm testler Serolojik Test
+    SLA sınıflandırma ve hedef hesabı.
+
+    İstenen sınıflandırma:
+    - Yapılan Test içinde PCR veya DNA varsa: Moleküler Test, hedef 3 iş günü
+    - Yapılan Test içinde Ekim, Bakteri, Total Bakteri, Bakteriyolojik, Antibiyogram varsa: Bakteriyolojik Test, hedef 5 iş günü
+    - Bunlar dışındaki tüm testler: Serolojik Test, hedef 3 iş günü
+
+    Analiz kapsamı:
+    - Sadece Numune Geliş Zamanı dolu olan
+    - Ve Numune Geliş Zamanı 06.05.2026 ve sonrası olan satırlar
     """
-    t = str(test_adi).upper()
-    t = t.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
+    test_adi = str(row.get('Yapılan Test', '')).upper()
+    test_adi = test_adi.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
 
-    if "PCR" in t or "DNA" in t:
-        return "Moleküler Test (Hedef: 3 Gün)", 3
+    # --- 1) Test kategorisi ve hedef ---
+    if "PCR" in test_adi or "DNA" in test_adi:
+        kategori = "Moleküler Test (Hedef: 3 Gün)"
+        hedef = 3
 
-    elif any(x in t for x in ["EKIM", "BAKTERI", "TOTAL BAKTERI", "BAKTERIYOLOJIK", "ANTIBIYOGRAM"]):
-        return "Bakteriyolojik Test (Hedef: 5 Gün)", 5
+    elif any(x in test_adi for x in ["EKIM", "BAKTERI", "TOTAL BAKTERI", "BAKTERIYOLOJIK", "ANTIBIYOGRAM"]):
+        kategori = "Bakteriyolojik Test (Hedef: 5 Gün)"
+        hedef = 5
 
     else:
-        return "Serolojik Test (Hedef: 3 Gün)", 3
-
-def tat_hesapla(row):
-    kategori, hedef = test_kategorisi_bul(row.get('Yapılan Test', ''))
+        kategori = "Serolojik Test (Hedef: 3 Gün)"
+        hedef = 3
 
     gelis = row.get('Numune Geliş Zamanı')
     test = row.get('Test tarihi')
     milat = pd.to_datetime('2026-05-06').date()
 
-    # Sadece Numune Geliş Zamanı girilmiş ve 6 Mayıs 2026 sonrası olan kayıtlar SLA kapsamına alınır.
-    # Bu tarihten önce Numune Geliş Zamanı boş olduğu için eski kayıtlar uyarıya/grafiğe dahil edilmez.
+    # --- 2) Kapsam kontrolü: sadece Numune Geliş Zamanı 6 Mayıs ve sonrası ---
     if pd.isna(gelis):
-        return pd.Series([kategori, "Kapsam Dışı", None])
+        return pd.Series([kategori, "Numune Geliş Zamanı Yok", None])
 
     gelis_date = gelis.date()
     if gelis_date < milat:
         return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None])
 
+    # Geliş zamanı 6 Mayıs sonrasıysa artık hesaplanması gereken kayıttır.
     if pd.isna(test):
         return pd.Series([kategori, "Test Zamanı Eksik", None])
 
+    # --- 3) İş günü farkı ve hedef durumu ---
     gelis_adj = adjust_start_time(gelis)
 
     try:
@@ -501,13 +499,34 @@ if st.session_state['giris_yapildi']:
             st.subheader("🎯 Operasyonel Hedef (SLA) Analizi - Numune Geliş Zamanı 6 Mayıs Sonrası")
             
             tat_gecerli = df[df['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])]
+
+            with st.expander("🔍 SLA veri kontrol tablosu / sorun giderme"):
+                c_dbg1, c_dbg2 = st.columns(2)
+                with c_dbg1:
+                    st.write("TAT Durum Dağılımı")
+                    st.dataframe(df['TAT_Durum'].value_counts(dropna=False).reset_index(), use_container_width=True)
+                with c_dbg2:
+                    st.write("TAT Kategori Dağılımı")
+                    st.dataframe(df['TAT_Kategori'].value_counts(dropna=False).reset_index(), use_container_width=True)
+
+                kontrol_sutunlari = [
+                    'Yapılan Test', 'Numune Geliş Zamanı', 'Test tarihi',
+                    'İşlenen Numune Sayısı', 'TAT_Kategori', 'TAT_Durum', 'Fark_Gun'
+                ]
+                mevcut_kontrol_sutunlari = [c for c in kontrol_sutunlari if c in df.columns]
+                st.dataframe(df[mevcut_kontrol_sutunlari], use_container_width=True)
             
             if not tat_gecerli.empty:
                 t1, t2 = st.columns(2)
                 
                 with t1:
-                    tat_ozet = tat_gecerli['TAT_Durum'].value_counts().reset_index()
-                    tat_ozet.columns = ['Durum', 'Adet']
+                    tat_ozet = (
+                        tat_gecerli
+                        .groupby('TAT_Durum')['İşlenen Numune Sayısı']
+                        .sum()
+                        .reset_index(name='Adet')
+                        .rename(columns={'TAT_Durum': 'Durum'})
+                    )
                     
                     fig_tat1 = px.pie(tat_ozet, values='Adet', names='Durum', hole=0.5,
                                       title='Genel Numune Sonuçlandırma Performansı',
@@ -517,7 +536,31 @@ if st.session_state['giris_yapildi']:
                     st.plotly_chart(fig_tat1, use_container_width=True)
                     
                 with t2:
-                    kategori_ozet = tat_gecerli.groupby(['TAT_Kategori', 'TAT_Durum']).size().reset_index(name='Adet')
+                    kategori_ozet = (
+                        tat_gecerli
+                        .groupby(['TAT_Kategori', 'TAT_Durum'])['İşlenen Numune Sayısı']
+                        .sum()
+                        .reset_index(name='Adet')
+                    )
+
+                    # 0 adet olsa bile üç ana kategori grafikte görünsün.
+                    tum_kategoriler = [
+                        "Moleküler Test (Hedef: 3 Gün)",
+                        "Bakteriyolojik Test (Hedef: 5 Gün)",
+                        "Serolojik Test (Hedef: 3 Gün)"
+                    ]
+                    tum_durumlar = ["Hedef İçi", "Gecikmeli"]
+                    tam_index = pd.MultiIndex.from_product(
+                        [tum_kategoriler, tum_durumlar],
+                        names=['TAT_Kategori', 'TAT_Durum']
+                    )
+                    kategori_ozet = (
+                        kategori_ozet
+                        .set_index(['TAT_Kategori', 'TAT_Durum'])
+                        .reindex(tam_index, fill_value=0)
+                        .reset_index()
+                    )
+
                     fig_tat2 = px.bar(kategori_ozet, x='TAT_Kategori', y='Adet', color='TAT_Durum',
                                       title='Test Kategorilerine Göre Hedef Uyum Dağılımı', barmode='group', text_auto='.0f',
                                       color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
@@ -539,7 +582,7 @@ if st.session_state['giris_yapildi']:
                 kimler_str = ", ".join(kimler[:4])
                 if len(kimler) > 4: kimler_str += " ve diğerleri..."
                 
-                detay_mesaji.append(f"**Sadece Numune Geliş Zamanı 6 Mayıs ve sonrası olan kayıtlarda;** toplam **{len(hatali_veya_eksik)} adet testin** test zamanı boş/hatalı olduğu için grafiğe alınamadı.\n  *Eksik Olanlar: {ozet_metni}*\n  🔍 **Etkilenen Kayıtlar (Örnek):** {kimler_str}")
+                detay_mesaji.append(f"**Sadece 6 Mayıs sonrası için;** toplam **{len(hatali_veya_eksik)} adet testin** geliş zamanı 6 Mayıs sonrası olduğu halde test zamanı boş/hatalı olduğu için grafiğe alınamadı.\n  *Eksik Olanlar: {ozet_metni}*\n  🔍 **Etkilenen Kayıtlar (Örnek):** {kimler_str}")
                 
             if detay_mesaji:
                 st.warning("⚠️ **SLA Hesaplama Kapsam Dışı Bilgilendirmesi:**\n" + "\n".join([f"- {msg}" for msg in detay_mesaji]))
