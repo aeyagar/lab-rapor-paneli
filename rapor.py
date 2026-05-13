@@ -12,7 +12,7 @@ import numpy as np
 try:
     import holidays
     tr_holidays = holidays.Turkey(years=range(2020, 2030))
-    tat_tatiller = [d for d in tr_holidays.keys()]
+    tat_tatiller = [str(d) for d in tr_holidays.keys()]
 except ImportError:
     tat_tatiller = []
 
@@ -121,11 +121,23 @@ def tat_hesapla(row):
     gelis = row.get('Numune Geliş Zamanı')
     test = row.get('Test tarihi')
     
+    milat = pd.to_datetime('2026-05-06').date()
+    gelis_date = gelis.date() if pd.notna(gelis) else None
+    test_date = test.date() if pd.notna(test) else None
+    
+    # Kapsam Dışı Algoritması: Eğer geliş tarihi VEYA (geliş boşsa) test tarihi 6 Mayıs öncesiyse sessizce atla
+    is_eski = False
+    if gelis_date and gelis_date < milat:
+        is_eski = True
+    elif not gelis_date and test_date and test_date < milat:
+        is_eski = True
+        
+    if is_eski:
+        return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None])
+
+    # Sadece 6 Mayıs sonrası için zaman eksiği kontrolü
     if pd.isna(gelis) or pd.isna(test):
         return pd.Series([kategori, "Zaman Verisi Eksik", None])
-        
-    if gelis < pd.to_datetime('2026-05-06'):
-        return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None])
         
     gelis_adj = adjust_start_time(gelis)
     
@@ -134,7 +146,7 @@ def tat_hesapla(row):
         if gun_farki < 0: gun_farki = 0
         durum = "Hedef İçi" if gun_farki <= hedef else "Gecikmeli"
         return pd.Series([kategori, durum, gun_farki])
-    except:
+    except Exception as e:
         return pd.Series([kategori, "Hatalı Tarih", None])
 
 # --- GELİŞMİŞ TASARIMLI PDF MOTORU ---
@@ -294,8 +306,6 @@ if st.session_state['giris_yapildi']:
     def veri_getir():
         try:
             sheet_url = "https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing"
-            
-            # --- HTTP 400 Hatasını önlemek için standart export formatı kullanıldı ---
             csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
             df = pd.read_csv(csv_url)
             
@@ -324,7 +334,7 @@ if st.session_state['giris_yapildi']:
                 st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
                 return pd.DataFrame()
 
-            # AGRESİF TEMİZLİK: Görünmez boşlukları, tireleri ve "yok" yazılarını Gerçek NaN yapar
+            # AGRESİF TEMİZLİK
             df.replace(r'^\s*$', np.nan, regex=True, inplace=True)
             df.replace(r'^-$', np.nan, regex=True, inplace=True)
             df.replace('nan', np.nan, inplace=True)
@@ -343,18 +353,24 @@ if st.session_state['giris_yapildi']:
                 df['Yapılan Test'] = df['Yapılan Test'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
                 df['Yapılan Test'] = df['Yapılan Test'].replace('NAN', 'BİLİNMEYEN TEST')
 
-            # --- AGRESİF TARİH DÜZELTİCİ (Slash, virgül, çift boşluk hatalarını çözer) ---
+            # --- SÜPER AGRESİF TARİH DÜZELTİCİ ---
             def tarih_saat_duzelt(x):
                 if pd.isna(x) or str(x).strip().lower() in ['nan', 'nat', '', '-', 'null']: return np.nan
                 val = str(x).strip()
                 val = re.sub(r'\s+', ' ', val) 
-                val = val.replace('/', '.') 
-                val = val.replace(',', '.') 
+                val = val.replace('/', '.').replace(',', '.')
+                
                 if ' ' in val:
                     d_part, t_part = val.split(' ', 1)
+                    # Tarih kısmında yanlışlıkla saat yazımı (12:05:2026) yapıldıysa onu (12.05.2026) olarak düzelt
+                    d_part = d_part.replace(':', '.') 
+                    # Saat kısmında nokta kullanıldıysa onu iki noktaya çevir
                     t_part = t_part.replace('.', ':') 
                     return f"{d_part} {t_part}"
-                return val
+                else:
+                    # Sadece tarih varsa ve iki nokta konduysa
+                    val = val.replace(':', '.')
+                    return val
 
             df['Test tarihi'] = df['Test tarihi'].apply(tarih_saat_duzelt)
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
@@ -495,13 +511,10 @@ if st.session_state['giris_yapildi']:
             else:
                 st.info("ℹ️ 6 Mayıs ve sonrası için henüz performans analizi yapacak geçerli veri bulunmuyor.")
 
-            # --- ŞEFFAFLIK RAPORU / BİLGİLENDİRME KUTUSU ---
+            # --- GÜNCELLENMİŞ ŞEFFAFLIK RAPORU ---
             hatali_veya_eksik = df[df['TAT_Durum'].isin(['Zaman Verisi Eksik', 'Hatalı Tarih'])]
-            eski_kayitlar = df[df['TAT_Durum'] == '6 Mayıs Öncesi (Kapsam Dışı)']
             
             detay_mesaji = []
-            if not eski_kayitlar.empty:
-                detay_mesaji.append(f"**{len(eski_kayitlar)} adet test** numune gelişi 6 Mayıs'tan önce olduğu için SLA hesabından hariç tutulmuştur.")
             if not hatali_veya_eksik.empty:
                 eksik_ozet = hatali_veya_eksik.groupby('TAT_Kategori').size().to_dict()
                 ozet_metni = ", ".join([f"{k}: {v} adet" for k, v in eksik_ozet.items()])
@@ -510,7 +523,7 @@ if st.session_state['giris_yapildi']:
                 kimler_str = ", ".join(kimler[:4])
                 if len(kimler) > 4: kimler_str += " ve diğerleri..."
                 
-                detay_mesaji.append(f"**{len(hatali_veya_eksik)} adet testin** geliş/sonuç saati Excel'de tamamen boş veya hatalı formatta olduğu için hedefleri ölçülemedi.\n  *Dağılım: {ozet_metni}*\n  🔍 **Etkilenen Kayıtlar (Örnek):** {kimler_str}")
+                detay_mesaji.append(f"**Sadece 6 Mayıs sonrası için;** toplam **{len(hatali_veya_eksik)} adet testin** geliş veya sonuç saati boş/hatalı olduğu için grafiğe alınamadı.\n  *Eksik Olanlar: {ozet_metni}*\n  🔍 **Etkilenen Kayıtlar (Örnek):** {kimler_str}")
                 
             if detay_mesaji:
                 st.warning("⚠️ **SLA Hesaplama Kapsam Dışı Bilgilendirmesi:**\n" + "\n".join([f"- {msg}" for msg in detay_mesaji]))
