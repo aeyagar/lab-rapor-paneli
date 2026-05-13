@@ -8,18 +8,19 @@ import os
 import re
 import numpy as np
 
-# Resmi tatil takvimi için
+# --- RESMI TATIL TAKVIMI ---
 try:
     import holidays
     tr_holidays = holidays.Turkey(years=range(2020, 2030))
-    tat_tatiller = [str(d) for d in tr_holidays.keys()]
-except ImportError:
-    tat_tatiller = []
+    # np.busday_count icin dogru format: datetime64[D]
+    tat_tatiller = np.array([np.datetime64(d) for d in tr_holidays.keys()], dtype="datetime64[D]")
+except Exception:
+    tat_tatiller = np.array([], dtype="datetime64[D]")
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
-# --- 🎨 KURUMSAL LACİVERT TASARIM VE AKILLI RENK CSS ---
+# --- CSS ---
 st.markdown("""
 <style>
     .ana-baslik-kutusu {
@@ -27,412 +28,398 @@ st.markdown("""
         padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 30px;
     }
     .ana-baslik-yazisi { color: var(--text-color); font-size: 38px !important; font-weight: 900 !important; margin: 0; }
-    
     [data-testid="stMetric"] {
         background-color: transparent; border: 3px solid #1a4a7c !important;
         padding: 20px !important; border-radius: 20px !important;
     }
     div[data-testid="stMetricValue"] > div { color: #1a4a7c !important; font-weight: 900 !important; }
-    
-    [data-testid="stSidebar"] p, 
-    [data-testid="stSidebar"] label, 
-    [data-testid="stSidebar"] span { 
-        color: var(--text-color) !important; font-weight: 700 !important; 
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] span {
+        color: var(--text-color) !important; font-weight: 700 !important;
     }
-    div[data-testid="stSidebarUserContent"] .stMultiSelect, 
+    div[data-testid="stSidebarUserContent"] .stMultiSelect,
     div[data-testid="stSidebarUserContent"] .stSelectbox,
     div[data-testid="stSidebarUserContent"] .stRadio {
         background-color: transparent !important; border: 2px solid #1a4a7c !important;
         padding: 15px !important; border-radius: 12px !important; margin-bottom: 15px !important;
     }
-
     .imza-alani { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; padding-top: 10px; color: var(--text-color); }
     .logo-alti-yazi { text-align: center; font-weight: 800; color: #1a4a7c !important; margin-top: 10px; }
-
     .mini-ciro-kutu {
         border: 2px solid #1a4a7c; padding: 12px; border-radius: 12px;
         text-align: center; min-width: 120px; background-color: transparent; flex: 1 1 0;
     }
     .mini-ciro-ay { font-size: 1rem; font-weight: 800; color: var(--text-color); margin-bottom: 5px; }
     .mini-ciro-deger { color: #1a4a7c; font-size: 1.25rem; font-weight: 900; }
-
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
         .mini-ciro-kutu { border-color: #3b82f6; }
         .mini-ciro-deger { color: #3b82f6; }
-        div[data-testid="stSidebarUserContent"] .stMultiSelect, 
+        div[data-testid="stSidebarUserContent"] .stMultiSelect,
         div[data-testid="stSidebarUserContent"] .stSelectbox,
-        div[data-testid="stSidebarUserContent"] .stRadio {
-            border: 2px solid #3b82f6 !important;
-        }
+        div[data-testid="stSidebarUserContent"] .stRadio { border: 2px solid #3b82f6 !important; }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- OTURUM YÖNETİMİ ---
-if 'giris_yapildi' not in st.session_state: st.session_state['giris_yapildi'] = False
+# --- OTURUM YONETIMI ---
+if "giris_yapildi" not in st.session_state:
+    st.session_state["giris_yapildi"] = False
 
-if not st.session_state['giris_yapildi']:
+if not st.session_state["giris_yapildi"]:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if os.path.exists("logo.png"): st.image("logo.png", width=250)
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=250)
         st.title("🔒 Güvenli Giriş")
         with st.form("login_form"):
             kullanici_adi = st.text_input("Kullanıcı Adı")
             sifre = st.text_input("Şifre", type="password")
             if st.form_submit_button("Sisteme Giriş Yap"):
                 if kullanici_adi == "admin" and sifre == "lab2026":
-                    st.session_state['giris_yapildi'] = True
+                    st.session_state["giris_yapildi"] = True
                     st.rerun()
-                else: st.error("❌ Bilgiler hatalı!")
+                else:
+                    st.error("❌ Bilgiler hatalı!")
 
-# --- SLA ZAMAN HESAPLAMA MOTORU ---
+# --- YARDIMCI FONKSIYONLAR ---
+def normalize_text(text):
+    t = str(text).upper()
+    return (
+        t.replace("İ", "I")
+         .replace("Ç", "C")
+         .replace("Ş", "S")
+         .replace("Ü", "U")
+         .replace("Ö", "O")
+         .replace("Ğ", "G")
+         .strip()
+    )
+
+
+def test_kategorisi_bul(test_adi):
+    t = normalize_text(test_adi)
+
+    # Kullanıcının istediği net ayrım:
+    # PCR veya DNA geciyorsa molekuler
+    if "PCR" in t or "DNA" in t:
+        return "Moleküler Test (Hedef: 3 Gün)", 3
+
+    # Ekim, Bakteri, Total Bakteri, Bakteriyolojik, Antibiyogram geciyorsa bakteriyolojik
+    if any(x in t for x in ["EKIM", "BAKTERI", "TOTAL BAKTERI", "BAKTERIYOLOJIK", "ANTIBIYOGRAM"]):
+        return "Bakteriyolojik Test (Hedef: 5 Gün)", 5
+
+    # Bunlar disinda kalan tum testler seroloji
+    return "Serolojik Test (Hedef: 3 Gün)", 3
+
+
 def adjust_start_time(dt):
-    if pd.isna(dt): return dt
+    """Mesai disi gelisleri bir sonraki uygun mesai baslangicina ceker."""
+    if pd.isna(dt):
+        return dt
+
+    dt = pd.Timestamp(dt)
+
+    # Hafta sonu geldiyse pazartesi 08:00
     if dt.weekday() >= 5:
-        days_to_add = 7 - dt.weekday() 
-        dt = dt + pd.Timedelta(days=days_to_add)
-        dt = dt.replace(hour=8, minute=0, second=0)
-    else:
-        if dt.hour >= 18:
+        days_to_add = 7 - dt.weekday()
+        return (dt + pd.Timedelta(days=days_to_add)).replace(hour=8, minute=0, second=0, microsecond=0)
+
+    # 18:00 ve sonrasi geldiyse sonraki is gunu 08:00
+    if dt.hour >= 18:
+        dt = dt + pd.Timedelta(days=1)
+        while dt.weekday() >= 5:
             dt = dt + pd.Timedelta(days=1)
-            if dt.weekday() == 5:
-                dt = dt + pd.Timedelta(days=2)
-            dt = dt.replace(hour=8, minute=0, second=0)
-        elif dt.hour < 8:
-            dt = dt.replace(hour=8, minute=0, second=0)
+        return dt.replace(hour=8, minute=0, second=0, microsecond=0)
+
+    # 08:00 oncesi geldiyse ayni gun 08:00
+    if dt.hour < 8:
+        return dt.replace(hour=8, minute=0, second=0, microsecond=0)
+
     return dt
 
+
 def tat_hesapla(row):
-    """
-    SLA sınıflandırma ve hedef hesabı.
+    kategori, hedef = test_kategorisi_bul(row.get("Yapılan Test", ""))
 
-    İstenen sınıflandırma:
-    - Yapılan Test içinde PCR veya DNA varsa: Moleküler Test, hedef 3 iş günü
-    - Yapılan Test içinde Ekim, Bakteri, Total Bakteri, Bakteriyolojik, Antibiyogram varsa: Bakteriyolojik Test, hedef 5 iş günü
-    - Bunlar dışındaki tüm testler: Serolojik Test, hedef 3 iş günü
+    gelis = row.get("Numune Geliş Zamanı")
+    test = row.get("Test tarihi")
+    milat = pd.Timestamp("2026-05-06").date()
 
-    Analiz kapsamı:
-    - Sadece Numune Geliş Zamanı dolu olan
-    - Ve Numune Geliş Zamanı 06.05.2026 ve sonrası olan satırlar
-    """
-    test_adi = str(row.get('Yapılan Test', '')).upper()
-    test_adi = test_adi.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
-
-    # --- 1) Test kategorisi ve hedef ---
-    if "PCR" in test_adi or "DNA" in test_adi:
-        kategori = "Moleküler Test (Hedef: 3 Gün)"
-        hedef = 3
-
-    elif any(x in test_adi for x in ["EKIM", "BAKTERI", "TOTAL BAKTERI", "BAKTERIYOLOJIK", "ANTIBIYOGRAM"]):
-        kategori = "Bakteriyolojik Test (Hedef: 5 Gün)"
-        hedef = 5
-
-    else:
-        kategori = "Serolojik Test (Hedef: 3 Gün)"
-        hedef = 3
-
-    gelis = row.get('Numune Geliş Zamanı')
-    test = row.get('Test tarihi')
-    milat = pd.to_datetime('2026-05-06').date()
-
-    # --- 2) Kapsam kontrolü: sadece Numune Geliş Zamanı 6 Mayıs ve sonrası ---
+    # Sadece numune gelis zamani girilen ve 6 Mayis 2026 sonrasi olanlar SLA kapsaminda
     if pd.isna(gelis):
-        return pd.Series([kategori, "Numune Geliş Zamanı Yok", None])
+        return pd.Series([kategori, "Numune Geliş Zamanı Yok", None, hedef])
 
-    gelis_date = gelis.date()
-    if gelis_date < milat:
-        return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None])
+    gelis = pd.Timestamp(gelis)
+    if gelis.date() < milat:
+        return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None, hedef])
 
-    # Geliş zamanı 6 Mayıs sonrasıysa artık hesaplanması gereken kayıttır.
     if pd.isna(test):
-        return pd.Series([kategori, "Test Zamanı Eksik", None])
+        return pd.Series([kategori, "Test Zamanı Eksik", None, hedef])
 
-    # --- 3) İş günü farkı ve hedef durumu ---
+    test = pd.Timestamp(test)
     gelis_adj = adjust_start_time(gelis)
 
     try:
-        gun_farki = np.busday_count(gelis_adj.date(), test.date(), holidays=tat_tatiller)
-        if gun_farki < 0:
-            gun_farki = 0
+        baslangic = np.datetime64(gelis_adj.date(), "D")
+        bitis = np.datetime64(test.date(), "D")
+        gun_farki = np.busday_count(baslangic, bitis, holidays=tat_tatiller)
+        gun_farki = max(int(gun_farki), 0)
 
         durum = "Hedef İçi" if gun_farki <= hedef else "Gecikmeli"
-        return pd.Series([kategori, durum, gun_farki])
+        return pd.Series([kategori, durum, gun_farki, hedef])
 
+    except Exception as e:
+        return pd.Series([kategori, f"Hatalı Tarih: {e}", None, hedef])
+
+
+def tarih_saat_duzelt(x):
+    if pd.isna(x) or str(x).strip().lower() in ["nan", "nat", "", "-", "null"]:
+        return np.nan
+
+    val = str(x).strip()
+    val = re.sub(r"\s+", " ", val)
+    val = val.replace("/", ".").replace(",", ".")
+
+    if " " in val:
+        d_part, t_part = val.split(" ", 1)
+        d_part = d_part.replace(":", ".")
+        t_part = t_part.replace(".", ":")
+        return f"{d_part} {t_part}"
+
+    val = val.replace(":", ".")
+    return val
+
+
+def para_temizle(deger):
+    try:
+        deger = str(deger)
+        deger = re.sub(r"[^\d.,]", "", deger)
+        if not deger:
+            return 0.0
+        if "." in deger and "," in deger:
+            if deger.rfind(",") > deger.rfind("."):
+                deger = deger.replace(".", "").replace(",", ".")
+            else:
+                deger = deger.replace(",", "")
+        elif "," in deger:
+            deger = deger.replace(",", ".")
+        return float(deger)
     except Exception:
-        return pd.Series([kategori, "Hatalı Tarih", None])
+        return 0.0
 
-# --- GELİŞMİŞ TASARIMLI PDF MOTORU ---
+# --- PDF MOTORU ---
 def pdf_olustur(df_filtreli):
     try:
         from fpdf import FPDF
     except ImportError:
-        return None 
+        return None
 
     def tr_temizle(text):
         return str(text).translate(str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU"))
 
     def pdf_kategori_bul(test_adi):
-        t = str(test_adi).upper()
-        t = t.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
-        
-        if "PCR" in t: 
-            return "Yapilan PCR Testleri"
-        elif any(x in t for x in ["EKIM", "ANTIBIYOGRAM", "TOTAL BAKTERI"]): 
+        kategori, _ = test_kategorisi_bul(test_adi)
+        if "Moleküler" in kategori:
+            return "Molekuler Testler"
+        if "Bakteriyolojik" in kategori:
             return "Bakteriyolojik Testler"
-        elif any(x in t for x in ["SAT", "BRUCELLA", "ROSE BENGAL"]): 
-            return "Brucella Serolojik Testleri"
-        elif any(x in t for x in ["TB FERON", "FERON", "MBOVIS", "M. BOVIS", "M.BOVIS", "BOVIS"]): 
-            return "Tuberkuloz Testleri"
-        elif "ARASTIRMA" in t: 
-            return "Arastirma Testleri"
-        else: 
-            return "Diger Serolojik Analizler"
+        return "Serolojik Testler"
 
     grup_aciklamalari = {
-        "Yapilan PCR Testleri": "(Tum PCR icerikli analizler)",
-        "Bakteriyolojik Testler": "(Bakteriyolojik Ekim, Antibiyogram, Total Bakteri vb.)",
-        "Brucella Serolojik Testleri": "(SAT, Brucella Ab, Rose Bengal vb.)",
-        "Tuberkuloz Testleri": "(TB Feron, M. Bovis Ab vb.)",
-        "Arastirma Testleri": "(Arastirma icerikli analizler)",
-        "Diger Serolojik Analizler": "(Yukari gruplar disindaki diger tum testler)"
+        "Molekuler Testler": "(PCR veya DNA ifadeli molekuler analizler)",
+        "Bakteriyolojik Testler": "(Ekim, bakteri, total bakteri, bakteriyolojik, antibiyogram vb.)",
+        "Serolojik Testler": "(Molekuler ve bakteriyolojik disindaki tum testler)",
     }
 
     df_pdf = df_filtreli.copy()
-    if 'Yapılan Test' in df_pdf.columns:
-        df_pdf['PDF_Grup'] = df_pdf['Yapılan Test'].apply(pdf_kategori_bul)
+    if "Yapılan Test" in df_pdf.columns:
+        df_pdf["PDF_Grup"] = df_pdf["Yapılan Test"].apply(pdf_kategori_bul)
     else:
-        df_pdf['PDF_Grup'] = "Diger Serolojik Analizler"
+        df_pdf["PDF_Grup"] = "Serolojik Testler"
 
     pdf = FPDF()
     pdf.add_page()
-    
-    pdf.set_fill_color(26, 74, 124) 
-    pdf.set_text_color(255, 255, 255) 
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 15, tr_temizle("DIAGEN LABORATUVARI ANALIZ RAPORU"), ln=True, align='C', fill=True)
-    
-    pdf.set_text_color(100, 100, 100) 
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 8, tr_temizle(f"Rapor Uretim Tarihi: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align='R')
+
+    pdf.set_fill_color(26, 74, 124)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 15, tr_temizle("DIAGEN LABORATUVARI ANALIZ RAPORU"), ln=True, align="C", fill=True)
+
+    pdf.set_text_color(100, 100, 100)
+    pdf.set_font("Arial", "I", 10)
+    pdf.cell(0, 8, tr_temizle(f"Rapor Uretim Tarihi: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align="R")
     pdf.ln(5)
 
-    if 'TAT_Durum' in df_pdf.columns:
-        tat_gecerli = df_pdf[df_pdf['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])]
-        if not tat_gecerli.empty:
-            basari = (len(tat_gecerli[tat_gecerli['TAT_Durum'] == 'Hedef İçi']) / len(tat_gecerli)) * 100
+    if "TAT_Durum" in df_pdf.columns and "İşlenen Numune Sayısı" in df_pdf.columns:
+        tat_gecerli = df_pdf[df_pdf["TAT_Durum"].isin(["Hedef İçi", "Gecikmeli"])]
+        toplam_is = tat_gecerli["İşlenen Numune Sayısı"].sum()
+        if toplam_is > 0:
+            hedef_ici_is = tat_gecerli[tat_gecerli["TAT_Durum"] == "Hedef İçi"]["İşlenen Numune Sayısı"].sum()
+            basari = (hedef_ici_is / toplam_is) * 100
             pdf.set_fill_color(220, 255, 220)
             pdf.set_text_color(0, 100, 0)
-            pdf.set_font("Arial", 'B', 11)
-            pdf.cell(0, 10, tr_temizle(f" HEDEF SURE (SLA) UYUM BASARISI (6 Mayis Sonrasi): %{basari:.1f}"), ln=True, fill=True, align='C')
+            pdf.set_font("Arial", "B", 11)
+            pdf.cell(0, 10, tr_temizle(f" HEDEF SURE (SLA/TAT) UYUM BASARISI: %{basari:.1f}"), ln=True, fill=True, align="C")
             pdf.ln(5)
 
-    pdf.set_text_color(0, 0, 0) 
-    pdf.set_fill_color(230, 240, 250) 
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, tr_temizle(" DONEMSEL GENEL TOPLAM HAVA DURUMU"), ln=True, fill=True)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_fill_color(230, 240, 250)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, tr_temizle(" DONEMSEL GENEL TOPLAM NUMUNE DURUMU"), ln=True, fill=True)
     pdf.ln(3)
 
-    pdf.set_font("Arial", 'B', 10)
+    pdf.set_font("Arial", "B", 10)
     pdf.cell(95, 10, tr_temizle(f" Toplam Gelen Numune : {int(df_pdf['Gelen Numune Sayısı'].sum())} Adet"), border=1)
     pdf.cell(95, 10, tr_temizle(f" Toplam Islenen Numune: {int(df_pdf['İşlenen Numune Sayısı'].sum())} Adet"), border=1, ln=True)
     pdf.ln(5)
-    
-    pdf.set_fill_color(200, 200, 200) 
-    pdf.set_font("Arial", 'B', 9)
+
+    pdf.set_fill_color(200, 200, 200)
+    pdf.set_font("Arial", "B", 9)
     pdf.cell(50, 8, tr_temizle("Test Grubu"), border=1, fill=True)
     pdf.cell(115, 8, tr_temizle("Grup Icerigi"), border=1, fill=True)
-    pdf.cell(25, 8, tr_temizle("Toplam (Adet)"), border=1, align='C', fill=True)
+    pdf.cell(25, 8, tr_temizle("Toplam"), border=1, align="C", fill=True)
     pdf.ln()
 
-    pdf.set_font("Arial", '', 9)
-    if 'Yapılan Test' in df_pdf.columns:
-        genel_grup = df_pdf.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
+    pdf.set_font("Arial", "", 9)
+    if "Yapılan Test" in df_pdf.columns:
+        genel_grup = df_pdf.groupby("PDF_Grup")["İşlenen Numune Sayısı"].sum().reset_index()
         for _, satir in genel_grup.iterrows():
-            if satir['İşlenen Numune Sayısı'] > 0:
-                pdf.cell(50, 8, tr_temizle(satir['PDF_Grup']), border=1)
-                pdf.cell(115, 8, tr_temizle(grup_aciklamalari.get(satir['PDF_Grup'], "")), border=1)
-                pdf.cell(25, 8, str(int(satir['İşlenen Numune Sayısı'])), border=1, align='C')
+            if satir["İşlenen Numune Sayısı"] > 0:
+                pdf.cell(50, 8, tr_temizle(satir["PDF_Grup"]), border=1)
+                pdf.cell(115, 8, tr_temizle(grup_aciklamalari.get(satir["PDF_Grup"], "")), border=1)
+                pdf.cell(25, 8, str(int(satir["İşlenen Numune Sayısı"])), border=1, align="C")
                 pdf.ln()
     pdf.ln(10)
 
-    pdf.set_fill_color(230, 240, 250)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, tr_temizle(" AYLIK DETAYLI NUMUNE VE TEST ANALIZI"), ln=True, fill=True)
-    pdf.ln(3)
-
-    ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
-    mevcut_aylar = df_pdf['Ay'].unique()
-    sirali_aylar = sorted(mevcut_aylar, key=lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
-
-    for ay in sirali_aylar:
-        df_ay = df_pdf[df_pdf['Ay'] == ay]
-        gelen_toplam = int(df_ay['Gelen Numune Sayısı'].sum())
-        islenen_toplam = int(df_ay['İşlenen Numune Sayısı'].sum())
-        
-        if islenen_toplam == 0 and gelen_toplam == 0:
-            continue
-
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font("Arial", 'B', 10)
-        pdf.cell(190, 8, tr_temizle(f" [{ay.upper()} AYI]  |  Gelen: {gelen_toplam} Numune  -  Islenen: {islenen_toplam} Test"), border=1, ln=True, fill=True)
-        
-        pdf.set_font("Arial", '', 9)
-        if 'Yapılan Test' in df_ay.columns:
-            aylik_grup = df_ay.groupby('PDF_Grup')['İşlenen Numune Sayısı'].sum().reset_index()
-            for _, satir in aylik_grup.iterrows():
-                if satir['İşlenen Numune Sayısı'] > 0:
-                    pdf.cell(50, 6, tr_temizle(satir['PDF_Grup']), border='L,B')
-                    pdf.cell(115, 6, tr_temizle(grup_aciklamalari.get(satir['PDF_Grup'], "")), border='B')
-                    pdf.cell(25, 6, str(int(satir['İşlenen Numune Sayısı'])), border='R,B', align='C')
-                    pdf.ln()
-        pdf.ln(5)
-
     try:
-        return bytes(pdf.output()) 
+        return bytes(pdf.output())
     except Exception:
-        return pdf.output(dest='S').encode('latin-1')
+        return pdf.output(dest="S").encode("latin-1")
 
-# --- SİSTEM UYGULAMA KODLARI ---
-if st.session_state['giris_yapildi']:
+# --- ANA UYGULAMA ---
+if st.session_state["giris_yapildi"]:
     st.markdown('<div class="ana-baslik-kutusu"><h1 class="ana-baslik-yazisi">DİAGEN Veteriner LAB Rapor Analiz Paneli</h1></div>', unsafe_allow_html=True)
 
-    if os.path.exists("logo.png"): 
+    if os.path.exists("logo.png"):
         st.sidebar.image("logo.png", use_container_width=True)
         st.sidebar.markdown('<p class="logo-alti-yazi">Veteriner Teşhis ve Analiz Laboratuvarı</p>', unsafe_allow_html=True)
         st.sidebar.divider()
-    
+
     st.sidebar.markdown("### ⚙️ Görünüm Ayarları")
     grafik_tarzi = st.sidebar.radio("Zaman Çizelgesi Seçeneği:", ["📈 Çubuk (Bar)", "🍕 Pasta (Ay Bazlı)"])
     secilen_renk = st.sidebar.selectbox("Grafik Renk Paleti:", ["Kurumsal Mavi", "Canlı Yeşil", "Sıcak Turuncu", "Renkli"])
-    
+
     renk_ayarlari = {
         "Kurumsal Mavi": {"skala": "Blues", "liste": px.colors.qualitative.Pastel1},
         "Canlı Yeşil": {"skala": "Greens", "liste": px.colors.qualitative.Dark2},
         "Sıcak Turuncu": {"skala": "Oranges", "liste": px.colors.qualitative.Vivid},
-        "Renkli": {"skala": "Viridis", "liste": px.colors.qualitative.Prism}
+        "Renkli": {"skala": "Viridis", "liste": px.colors.qualitative.Prism},
     }
     guncel_skala = renk_ayarlari[secilen_renk]["skala"]
     guncel_liste = renk_ayarlari[secilen_renk]["liste"]
 
-    @st.cache_data(ttl=15)
+    @st.cache_data(ttl=60)
     def veri_getir():
         try:
             sheet_url = "https://docs.google.com/spreadsheets/d/1709woL6PJjewZ2lMvxapYX60qvXG-obEYW3akJY62GI/edit?usp=sharing"
-            csv_url = sheet_url.replace('/edit?usp=sharing', '/export?format=csv')
+            csv_url = sheet_url.replace("/edit?usp=sharing", "/export?format=csv")
             df = pd.read_csv(csv_url)
-            
-            df = df.dropna(how='all')
-            df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
-            
+
+            df = df.dropna(how="all")
+            df.columns = df.columns.str.replace(r"\xa0", " ", regex=True).str.replace(r"\s+", " ", regex=True).str.strip()
+
             sutun_map = {}
             for col in df.columns:
-                c_upper = col.upper().replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ğ', 'G').replace('Ü', 'U').replace('Ö', 'O')
-                
-                if "ISLENEN" in c_upper: sutun_map[col] = 'İşlenen Numune Sayısı'
-                elif "YAPILAN" in c_upper: sutun_map[col] = 'Yapılan Test'
-                elif "FATURA" in c_upper and "TUTAR" in c_upper: sutun_map[col] = 'Fatura Tutarı'
-                elif "TAHSILAT" in c_upper: sutun_map[col] = 'Tahsilat Durumu'
-                elif "SEHIR" in c_upper: sutun_map[col] = 'Numunenin Geldiği Şehir'
-                elif "KURUM" in c_upper or "SAHIBI" in c_upper: sutun_map[col] = 'Kurum/Numune Sahibi'
-                elif "TEST" in c_upper and ("TARIH" in c_upper or "ZAMAN" in c_upper): sutun_map[col] = 'Test tarihi'
-                elif "GELIS" in c_upper and ("ZAMAN" in c_upper or "TARIH" in c_upper): sutun_map[col] = 'Numune Geliş Zamanı'
-                elif "GELEN" in c_upper and "NUMUNE" in c_upper: sutun_map[col] = 'Gelen Numune Sayısı'
-            
+                c_upper = normalize_text(col)
+                if "ISLENEN" in c_upper:
+                    sutun_map[col] = "İşlenen Numune Sayısı"
+                elif "YAPILAN" in c_upper:
+                    sutun_map[col] = "Yapılan Test"
+                elif "FATURA" in c_upper and "TUTAR" in c_upper:
+                    sutun_map[col] = "Fatura Tutarı"
+                elif "TAHSILAT" in c_upper:
+                    sutun_map[col] = "Tahsilat Durumu"
+                elif "SEHIR" in c_upper:
+                    sutun_map[col] = "Numunenin Geldiği Şehir"
+                elif "KURUM" in c_upper or "SAHIBI" in c_upper:
+                    sutun_map[col] = "Kurum/Numune Sahibi"
+                elif "TEST" in c_upper and ("TARIH" in c_upper or "ZAMAN" in c_upper):
+                    sutun_map[col] = "Test tarihi"
+                elif "GELIS" in c_upper and ("ZAMAN" in c_upper or "TARIH" in c_upper):
+                    sutun_map[col] = "Numune Geliş Zamanı"
+                elif "GELEN" in c_upper and "NUMUNE" in c_upper:
+                    sutun_map[col] = "Gelen Numune Sayısı"
+
             df.rename(columns=sutun_map, inplace=True)
 
-            beklenen_sutunlar = ['Test tarihi', 'Gelen Numune Sayısı', 'İşlenen Numune Sayısı', 'Kurum/Numune Sahibi']
+            beklenen_sutunlar = ["Test tarihi", "Gelen Numune Sayısı", "İşlenen Numune Sayısı", "Kurum/Numune Sahibi"]
             eksikler = [s for s in beklenen_sutunlar if s not in df.columns]
             if eksikler:
                 st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
                 return pd.DataFrame()
 
-            # AGRESİF TEMİZLİK
-            df.replace(r'^\s*$', np.nan, regex=True, inplace=True)
-            df.replace(r'^-$', np.nan, regex=True, inplace=True)
-            df.replace('nan', np.nan, inplace=True)
-            df.replace('NaN', np.nan, inplace=True)
+            # Bosluk/ tire temizlikleri
+            df.replace(r"^\s*$", np.nan, regex=True, inplace=True)
+            df.replace(r"^-$", np.nan, regex=True, inplace=True)
+            df.replace("nan", np.nan, inplace=True)
+            df.replace("NaN", np.nan, inplace=True)
 
-            sutunlar_ffill = ['Test tarihi', 'Numune Geliş Zamanı', 'Kurum/Numune Sahibi', 'Numunenin Geldiği Şehir']
+            # Birlesik satirlar icin once genel alanlari doldur
+            sutunlar_ffill = ["Test tarihi", "Kurum/Numune Sahibi", "Numunenin Geldiği Şehir"]
             for col in sutunlar_ffill:
                 if col in df.columns:
                     df[col] = df[col].ffill()
 
-            if 'Numunenin Geldiği Şehir' in df.columns:
-                df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
-                df['Numunenin Geldiği Şehir'] = df['Numunenin Geldiği Şehir'].replace('NAN', 'BİLİNMİYOR')
+            # Numune gelis zamani da eger ana satirda tek kez yazilip alt test satirlarinda bos kaliyorsa doldurulsun
+            if "Numune Geliş Zamanı" in df.columns:
+                df["Numune Geliş Zamanı"] = df["Numune Geliş Zamanı"].ffill()
 
-            if 'Yapılan Test' in df.columns:
-                df['Yapılan Test'] = df['Yapılan Test'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
-                df['Yapılan Test'] = df['Yapılan Test'].replace('NAN', 'BİLİNMEYEN TEST')
+            if "Numunenin Geldiği Şehir" in df.columns:
+                df["Numunenin Geldiği Şehir"] = df["Numunenin Geldiği Şehir"].astype(str).str.replace("i", "İ").str.upper().str.strip()
+                df["Numunenin Geldiği Şehir"] = df["Numunenin Geldiği Şehir"].replace("NAN", "BİLİNMİYOR")
 
-            # --- SÜPER AGRESİF TARİH DÜZELTİCİ ---
-            def tarih_saat_duzelt(x):
-                if pd.isna(x) or str(x).strip().lower() in ['nan', 'nat', '', '-', 'null']: return np.nan
-                val = str(x).strip()
-                val = re.sub(r'\s+', ' ', val) 
-                val = val.replace('/', '.').replace(',', '.')
-                
-                if ' ' in val:
-                    d_part, t_part = val.split(' ', 1)
-                    # Tarih kısmında yanlışlıkla saat yazımı (12:05:2026) yapıldıysa onu (12.05.2026) olarak düzelt
-                    d_part = d_part.replace(':', '.') 
-                    # Saat kısmında nokta kullanıldıysa onu iki noktaya çevir
-                    t_part = t_part.replace('.', ':') 
-                    return f"{d_part} {t_part}"
-                else:
-                    # Sadece tarih varsa ve iki nokta konduysa
-                    val = val.replace(':', '.')
-                    return val
+            if "Yapılan Test" in df.columns:
+                df["Yapılan Test"] = df["Yapılan Test"].astype(str).str.replace("i", "İ").str.upper().str.strip()
+                df["Yapılan Test"] = df["Yapılan Test"].replace("NAN", "BİLİNMEYEN TEST")
 
-            df['Test tarihi'] = df['Test tarihi'].apply(tarih_saat_duzelt)
-            df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
-            
-            if 'Numune Geliş Zamanı' in df.columns:
-                df['Numune Geliş Zamanı'] = df['Numune Geliş Zamanı'].apply(tarih_saat_duzelt)
-                df['Numune Geliş Zamanı'] = pd.to_datetime(df['Numune Geliş Zamanı'], errors='coerce', dayfirst=True)
-                
-                tat_sonuclar = df.apply(tat_hesapla, axis=1)
-                df['TAT_Kategori'] = tat_sonuclar[0]
-                df['TAT_Durum'] = tat_sonuclar[1]
-                df['Fark_Gun'] = tat_sonuclar[2]
+            df["Test tarihi"] = df["Test tarihi"].apply(tarih_saat_duzelt)
+            df["Test tarihi"] = pd.to_datetime(df["Test tarihi"], errors="coerce", dayfirst=True)
 
-            df = df.dropna(subset=['Test tarihi'])
-            
-            df['Yıl'] = df['Test tarihi'].dt.year.astype(int).astype(str)
-            df['Hafta Numarası'] = df['Test tarihi'].dt.isocalendar().week
-            df['Hafta Metni'] = df['Hafta Numarası'].astype(str) + ". Hafta"
-            
-            ay_sozlugu = {1:'Ocak', 2:'Şubat', 3:'Mart', 4:'Nisan', 5:'Mayıs', 6:'Haziran', 
-                          7:'Temmuz', 8:'Ağustos', 9:'Eylül', 10:'Ekim', 11:'Kasım', 12:'Aralık'}
-            df['Ay'] = df['Test tarihi'].dt.month.map(ay_sozlugu)
-            
-            df['Gelen Numune Sayısı'] = pd.to_numeric(df['Gelen Numune Sayısı'], errors='coerce').fillna(0)
-            df['İşlenen Numune Sayısı'] = pd.to_numeric(df['İşlenen Numune Sayısı'], errors='coerce').fillna(0)
-            
-            def para_temizle(deger):
-                try:
-                    deger = str(deger)
-                    deger = re.sub(r'[^\d.,]', '', deger)
-                    if not deger: return 0.0
-                    if '.' in deger and ',' in deger:
-                        if deger.rfind(',') > deger.rfind('.'):
-                            deger = deger.replace('.', '').replace(',', '.')
-                        else:
-                            deger = deger.replace(',', '')
-                    elif ',' in deger:
-                        deger = deger.replace(',', '.')
-                    return float(deger)
-                except:
-                    return 0.0
+            if "Numune Geliş Zamanı" in df.columns:
+                df["Numune Geliş Zamanı"] = df["Numune Geliş Zamanı"].apply(tarih_saat_duzelt)
+                df["Numune Geliş Zamanı"] = pd.to_datetime(df["Numune Geliş Zamanı"], errors="coerce", dayfirst=True)
+            else:
+                df["Numune Geliş Zamanı"] = pd.NaT
 
-            if 'Fatura Tutarı' in df.columns:
-                df['Fatura Tutarı'] = df['Fatura Tutarı'].apply(para_temizle)
-            
-            if 'Tahsilat Durumu' in df.columns: df['Tahsilat Durumu'] = df['Tahsilat Durumu'].fillna('Belirtilmedi')
-            
+            df = df.dropna(subset=["Test tarihi"])
+
+            df["Gelen Numune Sayısı"] = pd.to_numeric(df["Gelen Numune Sayısı"], errors="coerce").fillna(0)
+            df["İşlenen Numune Sayısı"] = pd.to_numeric(df["İşlenen Numune Sayısı"], errors="coerce").fillna(0)
+
+            # SLA/TAT hesaplari
+            tat_sonuclar = df.apply(tat_hesapla, axis=1)
+            df["TAT_Kategori"] = tat_sonuclar[0]
+            df["TAT_Durum"] = tat_sonuclar[1]
+            df["Fark_Gun"] = tat_sonuclar[2]
+            df["Hedef_Gun"] = tat_sonuclar[3]
+
+            df["Yıl"] = df["Test tarihi"].dt.year.astype(int).astype(str)
+            df["Hafta Numarası"] = df["Test tarihi"].dt.isocalendar().week
+            df["Hafta Metni"] = df["Hafta Numarası"].astype(str) + ". Hafta"
+
+            ay_sozlugu = {
+                1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+            }
+            df["Ay"] = df["Test tarihi"].dt.month.map(ay_sozlugu)
+
+            if "Fatura Tutarı" in df.columns:
+                df["Fatura Tutarı"] = df["Fatura Tutarı"].apply(para_temizle)
+            if "Tahsilat Durumu" in df.columns:
+                df["Tahsilat Durumu"] = df["Tahsilat Durumu"].fillna("Belirtilmedi")
+
             return df
+
         except Exception as e:
             st.error(f"Beklenmeyen bir veri okuma hatası: {e}")
             return pd.DataFrame()
@@ -440,21 +427,18 @@ if st.session_state['giris_yapildi']:
     df_ham = veri_getir()
 
     if not df_ham.empty:
-        ay_sirasi = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
-        
-        st.sidebar.markdown("### 📅 Filtreler")
-        
-        mevcut_yillar = sorted(df_ham['Yıl'].unique().tolist(), reverse=True)
-        secilen_yillar = st.sidebar.multiselect("Yılı Filtrele:", mevcut_yillar, default=mevcut_yillar)
-        df_yilli = df_ham[df_ham['Yıl'].isin(secilen_yillar)] if secilen_yillar else df_ham
-        
-        gecerli_aylar = sorted([ay for ay in df_yilli['Ay'].unique() if ay in ay_sirasi], key=lambda x: ay_sirasi.index(x))
-        secilen_aylar = st.sidebar.multiselect("Ayları Filtrele:", gecerli_aylar, default=gecerli_aylar)
-        
-        df = df_yilli[df_yilli['Ay'].isin(secilen_aylar)] if secilen_aylar else df_yilli
-        
-        st.sidebar.divider()
+        ay_sirasi = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
+        st.sidebar.markdown("### 📅 Filtreler")
+        mevcut_yillar = sorted(df_ham["Yıl"].unique().tolist(), reverse=True)
+        secilen_yillar = st.sidebar.multiselect("Yılı Filtrele:", mevcut_yillar, default=mevcut_yillar)
+        df_yilli = df_ham[df_ham["Yıl"].isin(secilen_yillar)] if secilen_yillar else df_ham
+
+        gecerli_aylar = sorted([ay for ay in df_yilli["Ay"].unique() if ay in ay_sirasi], key=lambda x: ay_sirasi.index(x))
+        secilen_aylar = st.sidebar.multiselect("Ayları Filtrele:", gecerli_aylar, default=gecerli_aylar)
+        df = df_yilli[df_yilli["Ay"].isin(secilen_aylar)] if secilen_aylar else df_yilli
+
+        st.sidebar.divider()
         st.sidebar.markdown("### 📄 Raporlama")
         pdf_verisi = pdf_olustur(df)
         if pdf_verisi:
@@ -463,226 +447,267 @@ if st.session_state['giris_yapildi']:
                 data=pdf_verisi,
                 file_name=f"Diagen_Analiz_Raporu_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
-                use_container_width=True
+                use_container_width=True,
             )
         else:
-            if not tat_tatiller:
-                st.sidebar.error("Tatil modülü yok! 'requirements.txt' içine 'holidays' yazın.")
+            st.sidebar.error("PDF için 'fpdf' gereklidir. requirements.txt içine fpdf ekleyin.")
 
         st.sidebar.divider()
         if st.sidebar.button("🔄 Verileri Yenile", use_container_width=True):
             veri_getir.clear()
             st.rerun()
-            
-        col_cikis, col_imza = st.sidebar.columns([1,1])
-        with col_cikis: st.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({'giris_yapildi': False}), use_container_width=True)
-        with col_imza: st.markdown('<div class="imza-alani">AEY</div>', unsafe_allow_html=True)
 
+        col_cikis, col_imza = st.sidebar.columns([1, 1])
+        with col_cikis:
+            st.button("🚪 Çıkış Yap", on_click=lambda: st.session_state.update({"giris_yapildi": False}), use_container_width=True)
+        with col_imza:
+            st.markdown('<div class="imza-alani">AEY</div>', unsafe_allow_html=True)
+
+        # --- ANA KPI'LAR ---
         m1, m2, m3 = st.columns(3)
         m1.metric("🐄 Gelen Numune Sayısı", f"{int(df['Gelen Numune Sayısı'].sum()):,.0f} Adet")
-        m2.metric("🧪 İşlenen Test Adedi", f"{int(df['İşlenen Numune Sayısı'].sum()):,.0f} Adet")
+        m2.metric("🧪 İşlenen Test / Analiz Adedi", f"{int(df['İşlenen Numune Sayısı'].sum()):,.0f} Adet")
         m3.metric("🚜 Aktif Kurum / Müşteri", f"{df['Kurum/Numune Sahibi'].nunique()} Adet")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
         f1, f2, f3 = st.columns(3)
-        toplam_ciro = df['Fatura Tutarı'].sum() if 'Fatura Tutarı' in df.columns else 0
-        bekleyen_tahsilat = df[df['Tahsilat Durumu'].str.contains('Ödenmedi', case=False, na=False)]['Fatura Tutarı'].sum() if 'Tahsilat Durumu' in df.columns and 'Fatura Tutarı' in df.columns else 0
-        sehir_sayisi = df['Numunenin Geldiği Şehir'].nunique() if 'Numunenin Geldiği Şehir' in df.columns else 0
-        
+        toplam_ciro = df["Fatura Tutarı"].sum() if "Fatura Tutarı" in df.columns else 0
+        bekleyen_tahsilat = df[df["Tahsilat Durumu"].str.contains("Ödenmedi", case=False, na=False)]["Fatura Tutarı"].sum() if "Tahsilat Durumu" in df.columns and "Fatura Tutarı" in df.columns else 0
+        sehir_sayisi = df["Numunenin Geldiği Şehir"].nunique() if "Numunenin Geldiği Şehir" in df.columns else 0
+
         f1.metric("🌍 Numune Gelen Şehir", f"{sehir_sayisi} Şehir")
         f2.metric("💰 Toplam Ciro (KDV Hariç)", f"₺ {toplam_ciro:,.2f}")
         f3.metric("⏳ Bekleyen Tahsilat", f"₺ {bekleyen_tahsilat:,.2f}")
 
-        if 'TAT_Durum' in df.columns:
-            st.divider()
-            st.subheader("🎯 Operasyonel Hedef (SLA) Analizi - Numune Geliş Zamanı 6 Mayıs Sonrası")
-            
-            tat_gecerli = df[df['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])]
+        # --- SLA / TAT ANALIZI ---
+        st.divider()
+        st.subheader("🎯 Operasyonel Hedef (SLA/TAT) Analizi")
+        st.caption("Bu bölümde başarı ve gecikme adetleri satır sayısıyla değil, **İşlenen Numune Sayısı / analiz adedi** toplamıyla hesaplanır.")
 
-            with st.expander("🔍 SLA veri kontrol tablosu / sorun giderme"):
-                c_dbg1, c_dbg2 = st.columns(2)
-                with c_dbg1:
-                    st.write("TAT Durum Dağılımı")
-                    st.dataframe(df['TAT_Durum'].value_counts(dropna=False).reset_index(), use_container_width=True)
-                with c_dbg2:
-                    st.write("TAT Kategori Dağılımı")
-                    st.dataframe(df['TAT_Kategori'].value_counts(dropna=False).reset_index(), use_container_width=True)
+        tat_gecerli = df[df["TAT_Durum"].isin(["Hedef İçi", "Gecikmeli"])].copy()
+        toplam_sla_is = tat_gecerli["İşlenen Numune Sayısı"].sum()
+        hedef_ici_sla_is = tat_gecerli[tat_gecerli["TAT_Durum"] == "Hedef İçi"]["İşlenen Numune Sayısı"].sum()
+        gecikmeli_sla_is = tat_gecerli[tat_gecerli["TAT_Durum"] == "Gecikmeli"]["İşlenen Numune Sayısı"].sum()
+        basari_orani = (hedef_ici_sla_is / toplam_sla_is * 100) if toplam_sla_is > 0 else 0
 
-                kontrol_sutunlari = [
-                    'Yapılan Test', 'Numune Geliş Zamanı', 'Test tarihi',
-                    'İşlenen Numune Sayısı', 'TAT_Kategori', 'TAT_Durum', 'Fark_Gun'
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("SLA Kapsamındaki Analiz", f"{int(toplam_sla_is):,.0f}")
+        s2.metric("Hedef İçi Analiz", f"{int(hedef_ici_sla_is):,.0f}")
+        s3.metric("Gecikmeli Analiz", f"{int(gecikmeli_sla_is):,.0f}")
+        s4.metric("Başarı Oranı", f"%{basari_orani:.1f}")
+
+        if toplam_sla_is > 0:
+            t1, t2 = st.columns(2)
+
+            with t1:
+                tat_ozet = tat_gecerli.groupby("TAT_Durum")["İşlenen Numune Sayısı"].sum().reset_index()
+                tat_ozet.columns = ["Durum", "Adet"]
+                fig_tat1 = px.pie(
+                    tat_ozet,
+                    values="Adet",
+                    names="Durum",
+                    hole=0.5,
+                    title="Genel Hedef Uyum Performansı",
+                    color="Durum",
+                    color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
+                    template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+                )
+                fig_tat1.update_layout(height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig_tat1, use_container_width=True)
+
+            with t2:
+                tum_kategoriler = [
+                    "Moleküler Test (Hedef: 3 Gün)",
+                    "Bakteriyolojik Test (Hedef: 5 Gün)",
+                    "Serolojik Test (Hedef: 3 Gün)",
                 ]
-                mevcut_kontrol_sutunlari = [c for c in kontrol_sutunlari if c in df.columns]
-                st.dataframe(df[mevcut_kontrol_sutunlari], use_container_width=True)
-            
-            if not tat_gecerli.empty:
-                t1, t2 = st.columns(2)
-                
-                with t1:
-                    tat_ozet = (
-                        tat_gecerli
-                        .groupby('TAT_Durum')['İşlenen Numune Sayısı']
-                        .sum()
-                        .reset_index(name='Adet')
-                        .rename(columns={'TAT_Durum': 'Durum'})
-                    )
-                    
-                    fig_tat1 = px.pie(tat_ozet, values='Adet', names='Durum', hole=0.5,
-                                      title='Genel Numune Sonuçlandırma Performansı',
-                                      color='Durum', color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
-                                      template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-                    fig_tat1.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                    st.plotly_chart(fig_tat1, use_container_width=True)
-                    
-                with t2:
-                    kategori_ozet = (
-                        tat_gecerli
-                        .groupby(['TAT_Kategori', 'TAT_Durum'])['İşlenen Numune Sayısı']
-                        .sum()
-                        .reset_index(name='Adet')
-                    )
+                tum_durumlar = ["Hedef İçi", "Gecikmeli"]
 
-                    # 0 adet olsa bile üç ana kategori grafikte görünsün.
-                    tum_kategoriler = [
-                        "Moleküler Test (Hedef: 3 Gün)",
-                        "Bakteriyolojik Test (Hedef: 5 Gün)",
-                        "Serolojik Test (Hedef: 3 Gün)"
-                    ]
-                    tum_durumlar = ["Hedef İçi", "Gecikmeli"]
-                    tam_index = pd.MultiIndex.from_product(
-                        [tum_kategoriler, tum_durumlar],
-                        names=['TAT_Kategori', 'TAT_Durum']
-                    )
-                    kategori_ozet = (
-                        kategori_ozet
-                        .set_index(['TAT_Kategori', 'TAT_Durum'])
-                        .reindex(tam_index, fill_value=0)
-                        .reset_index()
-                    )
+                kategori_ozet = (
+                    tat_gecerli.groupby(["TAT_Kategori", "TAT_Durum"])["İşlenen Numune Sayısı"]
+                    .sum()
+                    .reset_index(name="Adet")
+                )
 
-                    fig_tat2 = px.bar(kategori_ozet, x='TAT_Kategori', y='Adet', color='TAT_Durum',
-                                      title='Test Kategorilerine Göre Hedef Uyum Dağılımı', barmode='group', text_auto='.0f',
-                                      color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
-                                      template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-                    fig_tat2.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="")
-                    st.plotly_chart(fig_tat2, use_container_width=True)
-            else:
-                st.info("ℹ️ 6 Mayıs ve sonrası için henüz performans analizi yapacak geçerli veri bulunmuyor.")
+                tam_index = pd.MultiIndex.from_product([tum_kategoriler, tum_durumlar], names=["TAT_Kategori", "TAT_Durum"])
+                kategori_ozet = (
+                    kategori_ozet.set_index(["TAT_Kategori", "TAT_Durum"])
+                    .reindex(tam_index, fill_value=0)
+                    .reset_index()
+                )
 
-            # --- GÜNCELLENMİŞ ŞEFFAFLIK RAPORU ---
-            hatali_veya_eksik = df[df['TAT_Durum'].isin(['Test Zamanı Eksik', 'Hatalı Tarih'])]
-            
-            detay_mesaji = []
-            if not hatali_veya_eksik.empty:
-                eksik_ozet = hatali_veya_eksik.groupby('TAT_Kategori').size().to_dict()
-                ozet_metni = ", ".join([f"{k}: {v} adet" for k, v in eksik_ozet.items()])
-                
-                kimler = hatali_veya_eksik['Kurum/Numune Sahibi'].dropna().unique()
-                kimler_str = ", ".join(kimler[:4])
-                if len(kimler) > 4: kimler_str += " ve diğerleri..."
-                
-                detay_mesaji.append(f"**Sadece 6 Mayıs sonrası için;** toplam **{len(hatali_veya_eksik)} adet testin** geliş zamanı 6 Mayıs sonrası olduğu halde test zamanı boş/hatalı olduğu için grafiğe alınamadı.\n  *Eksik Olanlar: {ozet_metni}*\n  🔍 **Etkilenen Kayıtlar (Örnek):** {kimler_str}")
-                
-            if detay_mesaji:
-                st.warning("⚠️ **SLA Hesaplama Kapsam Dışı Bilgilendirmesi:**\n" + "\n".join([f"- {msg}" for msg in detay_mesaji]))
+                fig_tat2 = px.bar(
+                    kategori_ozet,
+                    x="TAT_Kategori",
+                    y="Adet",
+                    color="TAT_Durum",
+                    title="Test Kategorilerine Göre Hedef Uyum Dağılımı",
+                    barmode="group",
+                    text_auto=".0f",
+                    color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
+                    template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+                )
+                fig_tat2.update_layout(height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_title="")
+                st.plotly_chart(fig_tat2, use_container_width=True)
+        else:
+            st.info("ℹ️ SLA/TAT hesabına giren geçerli analiz bulunmuyor. Numune Geliş Zamanı ve Test tarihi alanlarını kontrol edin.")
 
-        if 'Fatura Tutarı' in df.columns:
+        # --- SLA KONTROL TABLOSU ---
+        with st.expander("🔍 SLA Kontrol Tablosu / Hata Ayıklama", expanded=False):
+            st.write("TAT Durum Dağılımı - işlenen analiz toplamı")
+            durum_debug = df.groupby("TAT_Durum")["İşlenen Numune Sayısı"].sum().reset_index().sort_values("İşlenen Numune Sayısı", ascending=False)
+            st.dataframe(durum_debug, use_container_width=True)
+
+            st.write("TAT Kategori Dağılımı - işlenen analiz toplamı")
+            kategori_debug = df.groupby("TAT_Kategori")["İşlenen Numune Sayısı"].sum().reset_index().sort_values("İşlenen Numune Sayısı", ascending=False)
+            st.dataframe(kategori_debug, use_container_width=True)
+
+            kolonlar = ["Yapılan Test", "Numune Geliş Zamanı", "Test tarihi", "İşlenen Numune Sayısı", "TAT_Kategori", "TAT_Durum", "Fark_Gun", "Hedef_Gun"]
+            mevcut_kolonlar = [c for c in kolonlar if c in df.columns]
+            st.dataframe(df[mevcut_kolonlar], use_container_width=True)
+
+        # --- AYLIK CIRO ---
+        if "Fatura Tutarı" in df.columns:
             st.markdown("<br><h5 style='text-align:center; font-weight: 800; color: var(--text-color);'>📅 Aylık Ciro Dağılımı</h5>", unsafe_allow_html=True)
-            
-            aylik_ciro = df.groupby('Ay')['Fatura Tutarı'].sum().reset_index()
-            aylik_ciro['Ay_Sirasi'] = aylik_ciro['Ay'].apply(lambda x: ay_sirasi.index(x))
-            aylik_ciro = aylik_ciro.sort_values('Ay_Sirasi')
-            
+            aylik_ciro = df.groupby("Ay")["Fatura Tutarı"].sum().reset_index()
+            aylik_ciro["Ay_Sirasi"] = aylik_ciro["Ay"].apply(lambda x: ay_sirasi.index(x))
+            aylik_ciro = aylik_ciro.sort_values("Ay_Sirasi")
+
             html_content = '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 10px;">'
             for _, row in aylik_ciro.iterrows():
                 html_content += f'<div class="mini-ciro-kutu"><div class="mini-ciro-ay">{row["Ay"]}</div><div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.2f}</div></div>'
-            html_content += '</div>'
+            html_content += "</div>"
             st.markdown(html_content, unsafe_allow_html=True)
 
         st.divider()
 
+        # --- SEHIR VE TAHSILAT ---
         st.subheader("🌍 Şehir ve Tahsilat Dağılımı")
         lok1, lok2 = st.columns(2)
-        
+
         with lok1:
-            if 'Numunenin Geldiği Şehir' in df.columns:
-                sehir_dagilimi = df.groupby('Numunenin Geldiği Şehir')[['Gelen Numune Sayısı', 'İşlenen Numune Sayısı']].sum().reset_index()
-                sehir_dagilimi = sehir_dagilimi.sort_values('İşlenen Numune Sayısı', ascending=False).head(10)
-                
-                sehir_melt = sehir_dagilimi.melt(id_vars='Numunenin Geldiği Şehir', 
-                                                 value_vars=['Gelen Numune Sayısı', 'İşlenen Numune Sayısı'], 
-                                                 var_name='Numune Türü', value_name='Adet')
-                
-                fig_sehir = px.bar(sehir_melt, x='Numunenin Geldiği Şehir', y='Adet', color='Numune Türü', barmode='group',
-                                   title='Şehir Bazlı Operasyon Hacmi (İlk 10)', text_auto='.0f',
-                                   color_discrete_sequence=guncel_liste, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-                
-                fig_sehir.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=""))
+            if "Numunenin Geldiği Şehir" in df.columns:
+                sehir_dagilimi = df.groupby("Numunenin Geldiği Şehir")[["Gelen Numune Sayısı", "İşlenen Numune Sayısı"]].sum().reset_index()
+                sehir_dagilimi = sehir_dagilimi.sort_values("İşlenen Numune Sayısı", ascending=False).head(10)
+                sehir_melt = sehir_dagilimi.melt(
+                    id_vars="Numunenin Geldiği Şehir",
+                    value_vars=["Gelen Numune Sayısı", "İşlenen Numune Sayısı"],
+                    var_name="Numune Türü",
+                    value_name="Adet",
+                )
+                fig_sehir = px.bar(
+                    sehir_melt,
+                    x="Numunenin Geldiği Şehir",
+                    y="Adet",
+                    color="Numune Türü",
+                    barmode="group",
+                    title="Şehir Bazlı Operasyon Hacmi (İlk 10)",
+                    text_auto=".0f",
+                    color_discrete_sequence=guncel_liste,
+                    template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+                )
+                fig_sehir.update_layout(height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=""))
                 st.plotly_chart(fig_sehir, use_container_width=True)
 
         with lok2:
-            if 'Tahsilat Durumu' in df.columns and 'Fatura Tutarı' in df.columns:
-                tahsilat_ozet = df.groupby('Tahsilat Durumu')['Fatura Tutarı'].sum().reset_index()
-                fig_tahsilat = px.pie(tahsilat_ozet, values='Fatura Tutarı', names='Tahsilat Durumu', hole=0.5,
-                                      title='Finansal Tahsilat Durumu', color_discrete_sequence=guncel_liste,
-                                      template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-                fig_tahsilat.update_traces(textinfo='percent+label')
-                fig_tahsilat.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            if "Tahsilat Durumu" in df.columns and "Fatura Tutarı" in df.columns:
+                tahsilat_ozet = df.groupby("Tahsilat Durumu")["Fatura Tutarı"].sum().reset_index()
+                fig_tahsilat = px.pie(
+                    tahsilat_ozet,
+                    values="Fatura Tutarı",
+                    names="Tahsilat Durumu",
+                    hole=0.5,
+                    title="Finansal Tahsilat Durumu",
+                    color_discrete_sequence=guncel_liste,
+                    template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+                )
+                fig_tahsilat.update_traces(textinfo="percent+label")
+                fig_tahsilat.update_layout(height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                 st.plotly_chart(fig_tahsilat, use_container_width=True)
 
         st.divider()
 
+        # --- MUSTERI PERFORMANS ---
         st.subheader("🏢 Müşteri Performans Analizleri")
-        if 'Kurum/Numune Sahibi' in df.columns:
-            m_gelen = df.groupby('Kurum/Numune Sahibi')['Gelen Numune Sayısı'].sum().reset_index().sort_values('Gelen Numune Sayısı', ascending=False).head(15)
-            fig1 = px.bar(m_gelen, x='Gelen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
-                          title='Müşteri Bazlı Numune Girişi (İlk 15)', color='Gelen Numune Sayısı', 
-                          color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-            fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=550, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        if "Kurum/Numune Sahibi" in df.columns:
+            m_gelen = df.groupby("Kurum/Numune Sahibi")["Gelen Numune Sayısı"].sum().reset_index().sort_values("Gelen Numune Sayısı", ascending=False).head(15)
+            fig1 = px.bar(
+                m_gelen,
+                x="Gelen Numune Sayısı",
+                y="Kurum/Numune Sahibi",
+                orientation="h",
+                title="Müşteri Bazlı Numune Girişi (İlk 15)",
+                color="Gelen Numune Sayısı",
+                color_continuous_scale=guncel_skala,
+                text_auto=".0f",
+                template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+            )
+            fig1.update_layout(yaxis={"categoryorder": "total ascending"}, height=550, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig1, use_container_width=True)
 
-            m_islenen = df.groupby('Kurum/Numune Sahibi')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False).head(15)
-            fig2 = px.bar(m_islenen, x='İşlenen Numune Sayısı', y='Kurum/Numune Sahibi', orientation='h', 
-                          title='Müşterilere Göre İşlenen Test Adedi (İlk 15)', color='İşlenen Numune Sayısı', 
-                          color_continuous_scale=guncel_skala, text_auto='.0f', template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-            fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=550, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            m_islenen = df.groupby("Kurum/Numune Sahibi")["İşlenen Numune Sayısı"].sum().reset_index().sort_values("İşlenen Numune Sayısı", ascending=False).head(15)
+            fig2 = px.bar(
+                m_islenen,
+                x="İşlenen Numune Sayısı",
+                y="Kurum/Numune Sahibi",
+                orientation="h",
+                title="Müşterilere Göre İşlenen Test / Analiz Adedi (İlk 15)",
+                color="İşlenen Numune Sayısı",
+                color_continuous_scale=guncel_skala,
+                text_auto=".0f",
+                template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+            )
+            fig2.update_layout(yaxis={"categoryorder": "total ascending"}, height=550, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig2, use_container_width=True)
 
         st.divider()
 
+        # --- DONEMSEL YOGUNLUK ---
         st.subheader("⏳ Dönemsel Yoğunluk Analizi")
         if grafik_tarzi == "📈 Çubuk (Bar)":
-            haftalik_veri = df.groupby(['Ay', 'Hafta Metni'])['İşlenen Numune Sayısı'].sum().reset_index()
+            haftalik_veri = df.groupby(["Ay", "Hafta Metni"])["İşlenen Numune Sayısı"].sum().reset_index()
             aktif_ay_sirasi = [ay for ay in ay_sirasi if ay in secilen_aylar]
-            
-            fig_zaman = px.bar(haftalik_veri, x='Ay', y='İşlenen Numune Sayısı', color='Hafta Metni', 
-                               barmode='group', title='Aylık/Haftalık İşlem Hacmi', text_auto='.0f',
-                               category_orders={'Ay': aktif_ay_sirasi}, color_discrete_sequence=guncel_liste,
-                               template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-            fig_zaman.update_layout(height=500, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            fig_zaman = px.bar(
+                haftalik_veri,
+                x="Ay",
+                y="İşlenen Numune Sayısı",
+                color="Hafta Metni",
+                barmode="group",
+                title="Aylık/Haftalık İşlem Hacmi",
+                text_auto=".0f",
+                category_orders={"Ay": aktif_ay_sirasi},
+                color_discrete_sequence=guncel_liste,
+                template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+            )
+            fig_zaman.update_layout(height=500, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_zaman, use_container_width=True)
         else:
-            secili_aylar_liste = sorted(df['Ay'].unique().tolist(), key=lambda x: ay_sirasi.index(x))
-            num_cols = 2 
+            secili_aylar_liste = sorted(df["Ay"].unique().tolist(), key=lambda x: ay_sirasi.index(x))
+            num_cols = 2
             num_rows = (len(secili_aylar_liste) + num_cols - 1) // num_cols
-            fig_donut = make_subplots(rows=num_rows, cols=num_cols, specs=[[{'type':'domain'}]*num_cols]*num_rows, subplot_titles=secili_aylar_liste)
+            fig_donut = make_subplots(rows=num_rows, cols=num_cols, specs=[[{"type": "domain"}] * num_cols] * num_rows, subplot_titles=secili_aylar_liste)
             for i, ay in enumerate(secili_aylar_liste):
-                ay_verisi = df[df['Ay'] == ay].groupby('Hafta Metni')['İşlenen Numune Sayısı'].sum().reset_index()
-                fig_donut.add_trace(go.Pie(labels=ay_verisi['Hafta Metni'], values=ay_verisi['İşlenen Numune Sayısı'], name=ay, hole=0.4), row=(i//num_cols)+1, col=(i%num_cols)+1)
-            fig_donut.update_layout(height=400*num_rows, colorway=guncel_liste, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+                ay_verisi = df[df["Ay"] == ay].groupby("Hafta Metni")["İşlenen Numune Sayısı"].sum().reset_index()
+                fig_donut.add_trace(go.Pie(labels=ay_verisi["Hafta Metni"], values=ay_verisi["İşlenen Numune Sayısı"], name=ay, hole=0.4), row=(i // num_cols) + 1, col=(i % num_cols) + 1)
+            fig_donut.update_layout(height=400 * num_rows, colorway=guncel_liste, template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
             st.plotly_chart(fig_donut, use_container_width=True)
 
         st.divider()
 
-        if 'Yapılan Test' in df.columns:
-            test_dagilimi = df.groupby('Yapılan Test')['İşlenen Numune Sayısı'].sum().reset_index().sort_values('İşlenen Numune Sayısı', ascending=False)
+        # --- TEST DAGILIMI ---
+        if "Yapılan Test" in df.columns:
+            test_dagilimi = df.groupby("Yapılan Test")["İşlenen Numune Sayısı"].sum().reset_index().sort_values("İşlenen Numune Sayısı", ascending=False)
             grafik_boyu = max(600, len(test_dagilimi) * 35)
-            fig_test = px.funnel(test_dagilimi, x='İşlenen Numune Sayısı', y='Yapılan Test', 
-                                 title='Çalışılan Tüm Test Panelleri', color_discrete_sequence=guncel_liste,
-                                 template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
-            fig_test.update_layout(height=grafik_boyu, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            fig_test = px.funnel(
+                test_dagilimi,
+                x="İşlenen Numune Sayısı",
+                y="Yapılan Test",
+                title="Çalışılan Tüm Test Panelleri",
+                color_discrete_sequence=guncel_liste,
+                template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly",
+            )
+            fig_test.update_layout(height=grafik_boyu, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_test, use_container_width=True)
 
         st.caption(f"⚙️ Son Veri Senkronizasyonu: {datetime.datetime.now().strftime('%H:%M:%S')} (Yenile butonuna basarak güncelleyebilirsiniz)")
