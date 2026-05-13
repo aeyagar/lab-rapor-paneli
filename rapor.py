@@ -111,7 +111,6 @@ def tat_hesapla(row):
     if pd.isna(gelis) or pd.isna(test):
         return pd.Series([None, "Zaman Verisi Eksik", None])
         
-    # --- MİLAT KONTROLÜ: 6 Mayıs 2026 öncesini atla ---
     if gelis < pd.to_datetime('2026-05-06'):
         return pd.Series(["SLA Öncesi", "Kapsam Dışı", None])
         
@@ -133,7 +132,7 @@ def tat_hesapla(row):
     if "PCR" in test_adi:
         kategori = "Moleküler Test (Hedef: 3 Gün)"
         hedef = 3
-    elif any(x in test_adi for x in ["EKIM", "ANTIBIYOGRAM"]):
+    elif any(x in test_adi for x in ["EKIM", "ANTIBIYOGRAM", "TOTAL BAKTERI"]):
         kategori = "Bakteriyolojik Test (Hedef: 5 Gün)"
         hedef = 5
     else:
@@ -341,10 +340,23 @@ if st.session_state['giris_yapildi']:
                 df['Yapılan Test'] = df['Yapılan Test'].astype(str).str.replace('i', 'İ').str.upper().str.strip()
                 df['Yapılan Test'] = df['Yapılan Test'].replace('NAN', 'BİLİNMEYEN TEST')
 
+            # --- YENİ EKLENEN TARİH DÜZELTME MOTORU (14.30'u 14:30 yapar) ---
+            def tarih_saat_duzelt(x):
+                if pd.isna(x) or str(x).strip().lower() == 'nan': return np.nan
+                val = str(x).strip()
+                if ' ' in val:
+                    d_part, t_part = val.split(' ', 1)
+                    t_part = t_part.replace('.', ':')
+                    return f"{d_part} {t_part}"
+                return val
+
+            df['Test tarihi'] = df['Test tarihi'].apply(tarih_saat_duzelt)
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
             
             if 'Numune Geliş Zamanı' in df.columns:
+                df['Numune Geliş Zamanı'] = df['Numune Geliş Zamanı'].apply(tarih_saat_duzelt)
                 df['Numune Geliş Zamanı'] = pd.to_datetime(df['Numune Geliş Zamanı'], errors='coerce', dayfirst=True)
+                
                 tat_sonuclar = df.apply(tat_hesapla, axis=1)
                 df['TAT_Kategori'] = tat_sonuclar[0]
                 df['TAT_Durum'] = tat_sonuclar[1]
