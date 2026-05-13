@@ -6,6 +6,15 @@ import plotly.graph_objects as go
 import datetime
 import os
 import re
+import numpy as np
+
+# Resmi tatil takvimi için
+try:
+    import holidays
+    tr_holidays = holidays.Turkey(years=range(2020, 2030))
+    tat_tatiller = [d for d in tr_holidays.keys()]
+except ImportError:
+    tat_tatiller = []
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
@@ -78,6 +87,62 @@ if not st.session_state['giris_yapildi']:
                     st.rerun()
                 else: st.error("❌ Bilgiler hatalı!")
 
+# --- SLA ZAMAN HESAPLAMA MOTORU ---
+def adjust_start_time(dt):
+    if pd.isna(dt): return dt
+    if dt.weekday() >= 5:
+        days_to_add = 7 - dt.weekday() 
+        dt = dt + pd.Timedelta(days=days_to_add)
+        dt = dt.replace(hour=8, minute=0, second=0)
+    else:
+        if dt.hour >= 18:
+            dt = dt + pd.Timedelta(days=1)
+            if dt.weekday() == 5:
+                dt = dt + pd.Timedelta(days=2)
+            dt = dt.replace(hour=8, minute=0, second=0)
+        elif dt.hour < 8:
+            dt = dt.replace(hour=8, minute=0, second=0)
+    return dt
+
+def tat_hesapla(row):
+    gelis = row.get('Numune Geliş Zamanı')
+    test = row.get('Test tarihi')
+    
+    if pd.isna(gelis) or pd.isna(test):
+        return pd.Series([None, "Zaman Verisi Eksik", None])
+        
+    # --- MİLAT KONTROLÜ: 6 Mayıs 2026 öncesini atla ---
+    if gelis < pd.to_datetime('2026-05-06'):
+        return pd.Series(["SLA Öncesi", "Kapsam Dışı", None])
+        
+    gelis_adj = adjust_start_time(gelis)
+    
+    try:
+        gun_farki = np.busday_count(
+            gelis_adj.date(), 
+            test.date(), 
+            holidays=tat_tatiller
+        )
+        if gun_farki < 0: gun_farki = 0
+    except:
+        return pd.Series([None, "Hatalı Tarih", None])
+        
+    test_adi = str(row.get('Yapılan Test', '')).upper()
+    test_adi = test_adi.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
+    
+    if "PCR" in test_adi:
+        kategori = "Moleküler Test (Hedef: 3 Gün)"
+        hedef = 3
+    elif any(x in test_adi for x in ["EKIM", "ANTIBIYOGRAM"]):
+        kategori = "Bakteriyolojik Test (Hedef: 5 Gün)"
+        hedef = 5
+    else:
+        kategori = "Serolojik Test (Hedef: 3 Gün)"
+        hedef = 3
+        
+    durum = "Hedef İçi" if gun_farki <= hedef else "Gecikmeli"
+    return pd.Series([kategori, durum, gun_farki])
+
 # --- GELİŞMİŞ TASARIMLI PDF MOTORU ---
 def pdf_olustur(df_filtreli):
     try:
@@ -89,7 +154,6 @@ def pdf_olustur(df_filtreli):
         return str(text).translate(str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU"))
 
     def pdf_kategori_bul(test_adi):
-        # Tüm Türkçe karakterleri İngilizce eşdeğerlerine çevirerek aramayı kusursuz yapıyoruz
         t = str(test_adi).upper()
         t = t.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
         
@@ -124,7 +188,6 @@ def pdf_olustur(df_filtreli):
     pdf = FPDF()
     pdf.add_page()
     
-    # 🎨 KURUMSAL BAŞLIK
     pdf.set_fill_color(26, 74, 124) 
     pdf.set_text_color(255, 255, 255) 
     pdf.set_font("Arial", 'B', 16)
@@ -135,7 +198,16 @@ def pdf_olustur(df_filtreli):
     pdf.cell(0, 8, tr_temizle(f"Rapor Uretim Tarihi: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align='R')
     pdf.ln(5)
 
-    # 📊 1. YILLIK GENEL ÖZET
+    if 'TAT_Durum' in df_pdf.columns:
+        tat_gecerli = df_pdf[df_pdf['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])]
+        if not tat_gecerli.empty:
+            basari = (len(tat_gecerli[tat_gecerli['TAT_Durum'] == 'Hedef İçi']) / len(tat_gecerli)) * 100
+            pdf.set_fill_color(220, 255, 220)
+            pdf.set_text_color(0, 100, 0)
+            pdf.set_font("Arial", 'B', 11)
+            pdf.cell(0, 10, tr_temizle(f" HEDEF SURE (SLA) UYUM BASARISI (6 Mayis Sonrasi): %{basari:.1f}"), ln=True, fill=True, align='C')
+            pdf.ln(5)
+
     pdf.set_text_color(0, 0, 0) 
     pdf.set_fill_color(230, 240, 250) 
     pdf.set_font("Arial", 'B', 12)
@@ -165,7 +237,6 @@ def pdf_olustur(df_filtreli):
                 pdf.ln()
     pdf.ln(10)
 
-    # 📅 2. AYLIK DETAYLI DÖKÜM TABLOLARI
     pdf.set_fill_color(230, 240, 250)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, tr_temizle(" AYLIK DETAYLI NUMUNE VE TEST ANALIZI"), ln=True, fill=True)
@@ -235,7 +306,6 @@ if st.session_state['giris_yapildi']:
             df = df.dropna(how='all')
             df.columns = df.columns.str.replace(r'\xa0', ' ', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip()
             
-            # --- YENİ EKLENEN HARİTALAMA (Test Zamanı / Test Tarihi duyarlılığı) ---
             sutun_map = {}
             for col in df.columns:
                 c_upper = col.upper().replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ğ', 'G').replace('Ü', 'U').replace('Ö', 'O')
@@ -247,6 +317,7 @@ if st.session_state['giris_yapildi']:
                 elif "SEHIR" in c_upper: sutun_map[col] = 'Numunenin Geldiği Şehir'
                 elif "KURUM" in c_upper or "SAHIBI" in c_upper: sutun_map[col] = 'Kurum/Numune Sahibi'
                 elif "TEST" in c_upper and ("TARIH" in c_upper or "ZAMAN" in c_upper): sutun_map[col] = 'Test tarihi'
+                elif "GELIS" in c_upper and ("ZAMAN" in c_upper or "TARIH" in c_upper): sutun_map[col] = 'Numune Geliş Zamanı'
                 elif "GELEN" in c_upper and "NUMUNE" in c_upper: sutun_map[col] = 'Gelen Numune Sayısı'
             
             df.rename(columns=sutun_map, inplace=True)
@@ -257,7 +328,7 @@ if st.session_state['giris_yapildi']:
                 st.error(f"🚨 E-Tablonuzda şu başlıklar bulunamadı: **{', '.join(eksikler)}**")
                 return pd.DataFrame()
 
-            sutunlar_ffill = ['Test tarihi', 'Kurum/Numune Sahibi', 'Numunenin Geldiği Şehir']
+            sutunlar_ffill = ['Test tarihi', 'Numune Geliş Zamanı', 'Kurum/Numune Sahibi', 'Numunenin Geldiği Şehir']
             for col in sutunlar_ffill:
                 if col in df.columns:
                     df[col] = df[col].ffill()
@@ -271,6 +342,14 @@ if st.session_state['giris_yapildi']:
                 df['Yapılan Test'] = df['Yapılan Test'].replace('NAN', 'BİLİNMEYEN TEST')
 
             df['Test tarihi'] = pd.to_datetime(df['Test tarihi'], errors='coerce', dayfirst=True)
+            
+            if 'Numune Geliş Zamanı' in df.columns:
+                df['Numune Geliş Zamanı'] = pd.to_datetime(df['Numune Geliş Zamanı'], errors='coerce', dayfirst=True)
+                tat_sonuclar = df.apply(tat_hesapla, axis=1)
+                df['TAT_Kategori'] = tat_sonuclar[0]
+                df['TAT_Durum'] = tat_sonuclar[1]
+                df['Fark_Gun'] = tat_sonuclar[2]
+
             df = df.dropna(subset=['Test tarihi'])
             
             df['Yıl'] = df['Test tarihi'].dt.year.astype(int).astype(str)
@@ -339,7 +418,8 @@ if st.session_state['giris_yapildi']:
                 use_container_width=True
             )
         else:
-            st.sidebar.error("PDF için 'pip install fpdf' gereklidir.")
+            if not tat_tatiller:
+                st.sidebar.error("Tatil modülü yok! 'requirements.txt' içine 'holidays' yazın.")
 
         st.sidebar.divider()
         if st.sidebar.button("🔄 Verileri Yenile", use_container_width=True):
@@ -365,6 +445,37 @@ if st.session_state['giris_yapildi']:
         f1.metric("🌍 Numune Gelen Şehir", f"{sehir_sayisi} Şehir")
         f2.metric("💰 Toplam Ciro (KDV Hariç)", f"₺ {toplam_ciro:,.2f}")
         f3.metric("⏳ Bekleyen Tahsilat", f"₺ {bekleyen_tahsilat:,.2f}")
+
+        if 'TAT_Durum' in df.columns:
+            st.divider()
+            st.subheader("🎯 Operasyonel Hedef (SLA) Analizi")
+            
+            tat_gecerli = df[df['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])]
+            
+            if not tat_gecerli.empty:
+                t1, t2 = st.columns(2)
+                
+                with t1:
+                    tat_ozet = tat_gecerli['TAT_Durum'].value_counts().reset_index()
+                    tat_ozet.columns = ['Durum', 'Adet']
+                    
+                    fig_tat1 = px.pie(tat_ozet, values='Adet', names='Durum', hole=0.5,
+                                      title='6 Mayıs Sonrası Sonuçlandırma Performansı',
+                                      color='Durum', color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
+                                      template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+                    fig_tat1.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_tat1, use_container_width=True)
+                    
+                with t2:
+                    kategori_ozet = tat_gecerli.groupby(['TAT_Kategori', 'TAT_Durum']).size().reset_index(name='Adet')
+                    fig_tat2 = px.bar(kategori_ozet, x='TAT_Kategori', y='Adet', color='TAT_Durum',
+                                      title='Test Kategorilerine Göre Hedef Uyum Dağılımı', barmode='group', text_auto='.0f',
+                                      color_discrete_map={"Hedef İçi": "#2ECC71", "Gecikmeli": "#E74C3C"},
+                                      template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly")
+                    fig_tat2.update_layout(height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="")
+                    st.plotly_chart(fig_tat2, use_container_width=True)
+            else:
+                st.info("ℹ️ 6 Mayıs ve sonrası için henüz performans analizi yapacak yeterli veri bulunmuyor.")
 
         if 'Fatura Tutarı' in df.columns:
             st.markdown("<br><h5 style='text-align:center; font-weight: 800; color: var(--text-color);'>📅 Aylık Ciro Dağılımı</h5>", unsafe_allow_html=True)
