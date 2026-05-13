@@ -89,64 +89,80 @@ if not st.session_state['giris_yapildi']:
 
 # --- SLA ZAMAN HESAPLAMA MOTORU ---
 def adjust_start_time(dt):
-    if pd.isna(dt): return dt
+    if pd.isna(dt):
+        return dt
+
+    # Hafta sonu geldiyse sonraki pazartesi 08:00 kabul et
     if dt.weekday() >= 5:
-        days_to_add = 7 - dt.weekday() 
+        days_to_add = 7 - dt.weekday()
         dt = dt + pd.Timedelta(days=days_to_add)
         dt = dt.replace(hour=8, minute=0, second=0)
     else:
+        # Mesai sonrası geldiyse sonraki iş günü 08:00 kabul et
         if dt.hour >= 18:
             dt = dt + pd.Timedelta(days=1)
             if dt.weekday() == 5:
                 dt = dt + pd.Timedelta(days=2)
+            elif dt.weekday() == 6:
+                dt = dt + pd.Timedelta(days=1)
             dt = dt.replace(hour=8, minute=0, second=0)
+
+        # Mesai öncesi geldiyse aynı gün 08:00 kabul et
         elif dt.hour < 8:
             dt = dt.replace(hour=8, minute=0, second=0)
+
     return dt
 
-def tat_hesapla(row):
-    test_adi = str(row.get('Yapılan Test', '')).upper()
-    test_adi = test_adi.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
-    
-    if "PCR" in test_adi:
-        kategori = "Moleküler Test (Hedef: 3 Gün)"
-        hedef = 3
-    elif any(x in test_adi for x in ["EKIM", "ANTIBIYOGRAM", "TOTAL BAKTERI"]):
-        kategori = "Bakteriyolojik Test (Hedef: 5 Gün)"
-        hedef = 5
+def test_kategorisi_bul(test_adi):
+    """
+    SLA hedef kategorisini belirler.
+    İstenen mantık:
+    - Yapılan Test içinde PCR veya DNA varsa Moleküler Test
+    - Ekim, Bakteri, Total Bakteri, Bakteriyolojik, Antibiyogram varsa Bakteriyolojik Test
+    - Diğer tüm testler Serolojik Test
+    """
+    t = str(test_adi).upper()
+    t = t.replace('İ', 'I').replace('Ç', 'C').replace('Ş', 'S').replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
+
+    if "PCR" in t or "DNA" in t:
+        return "Moleküler Test (Hedef: 3 Gün)", 3
+
+    elif any(x in t for x in ["EKIM", "BAKTERI", "TOTAL BAKTERI", "BAKTERIYOLOJIK", "ANTIBIYOGRAM"]):
+        return "Bakteriyolojik Test (Hedef: 5 Gün)", 5
+
     else:
-        kategori = "Serolojik Test (Hedef: 3 Gün)"
-        hedef = 3
+        return "Serolojik Test (Hedef: 3 Gün)", 3
+
+def tat_hesapla(row):
+    kategori, hedef = test_kategorisi_bul(row.get('Yapılan Test', ''))
 
     gelis = row.get('Numune Geliş Zamanı')
     test = row.get('Test tarihi')
-    
     milat = pd.to_datetime('2026-05-06').date()
-    gelis_date = gelis.date() if pd.notna(gelis) else None
-    test_date = test.date() if pd.notna(test) else None
-    
-    # Kapsam Dışı Algoritması: Eğer geliş tarihi VEYA (geliş boşsa) test tarihi 6 Mayıs öncesiyse sessizce atla
-    is_eski = False
-    if gelis_date and gelis_date < milat:
-        is_eski = True
-    elif not gelis_date and test_date and test_date < milat:
-        is_eski = True
-        
-    if is_eski:
+
+    # Sadece Numune Geliş Zamanı girilmiş ve 6 Mayıs 2026 sonrası olan kayıtlar SLA kapsamına alınır.
+    # Bu tarihten önce Numune Geliş Zamanı boş olduğu için eski kayıtlar uyarıya/grafiğe dahil edilmez.
+    if pd.isna(gelis):
+        return pd.Series([kategori, "Kapsam Dışı", None])
+
+    gelis_date = gelis.date()
+    if gelis_date < milat:
         return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None])
 
-    # Sadece 6 Mayıs sonrası için zaman eksiği kontrolü
-    if pd.isna(gelis) or pd.isna(test):
-        return pd.Series([kategori, "Zaman Verisi Eksik", None])
-        
+    if pd.isna(test):
+        return pd.Series([kategori, "Test Zamanı Eksik", None])
+
     gelis_adj = adjust_start_time(gelis)
-    
+
     try:
         gun_farki = np.busday_count(gelis_adj.date(), test.date(), holidays=tat_tatiller)
-        if gun_farki < 0: gun_farki = 0
+        if gun_farki < 0:
+            gun_farki = 0
+
         durum = "Hedef İçi" if gun_farki <= hedef else "Gecikmeli"
         return pd.Series([kategori, durum, gun_farki])
-    except Exception as e:
+
+    except Exception:
         return pd.Series([kategori, "Hatalı Tarih", None])
 
 # --- GELİŞMİŞ TASARIMLI PDF MOTORU ---
@@ -482,7 +498,7 @@ if st.session_state['giris_yapildi']:
 
         if 'TAT_Durum' in df.columns:
             st.divider()
-            st.subheader("🎯 Operasyonel Hedef (SLA) Analizi (6 Mayıs Sonrası)")
+            st.subheader("🎯 Operasyonel Hedef (SLA) Analizi - Numune Geliş Zamanı 6 Mayıs Sonrası")
             
             tat_gecerli = df[df['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])]
             
@@ -512,7 +528,7 @@ if st.session_state['giris_yapildi']:
                 st.info("ℹ️ 6 Mayıs ve sonrası için henüz performans analizi yapacak geçerli veri bulunmuyor.")
 
             # --- GÜNCELLENMİŞ ŞEFFAFLIK RAPORU ---
-            hatali_veya_eksik = df[df['TAT_Durum'].isin(['Zaman Verisi Eksik', 'Hatalı Tarih'])]
+            hatali_veya_eksik = df[df['TAT_Durum'].isin(['Test Zamanı Eksik', 'Hatalı Tarih'])]
             
             detay_mesaji = []
             if not hatali_veya_eksik.empty:
@@ -523,7 +539,7 @@ if st.session_state['giris_yapildi']:
                 kimler_str = ", ".join(kimler[:4])
                 if len(kimler) > 4: kimler_str += " ve diğerleri..."
                 
-                detay_mesaji.append(f"**Sadece 6 Mayıs sonrası için;** toplam **{len(hatali_veya_eksik)} adet testin** geliş veya sonuç saati boş/hatalı olduğu için grafiğe alınamadı.\n  *Eksik Olanlar: {ozet_metni}*\n  🔍 **Etkilenen Kayıtlar (Örnek):** {kimler_str}")
+                detay_mesaji.append(f"**Sadece Numune Geliş Zamanı 6 Mayıs ve sonrası olan kayıtlarda;** toplam **{len(hatali_veya_eksik)} adet testin** test zamanı boş/hatalı olduğu için grafiğe alınamadı.\n  *Eksik Olanlar: {ozet_metni}*\n  🔍 **Etkilenen Kayıtlar (Örnek):** {kimler_str}")
                 
             if detay_mesaji:
                 st.warning("⚠️ **SLA Hesaplama Kapsam Dışı Bilgilendirmesi:**\n" + "\n".join([f"- {msg}" for msg in detay_mesaji]))
