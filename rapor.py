@@ -173,21 +173,50 @@ def tat_hesapla(row):
 
 
 def tarih_saat_duzelt(x):
-    if pd.isna(x) or str(x).strip().lower() in ["nan", "nat", "", "-", "null"]:
-        return np.nan
+    """
+    Google Sheets / Excel tarihlerini güvenli şekilde datetime'a çevirir.
+
+    Önemli düzeltme:
+    Excel/Sheets bazen tarih+saat değerini 46148.458333 gibi seri sayı olarak verir.
+    Eski kod bunu metne çevirip pd.to_datetime ile okuyamadığı için NaT oluyordu;
+    bu yüzden binlerce SLA satırı grafiğe girmiyordu.
+    """
+    if pd.isna(x):
+        return pd.NaT
+
+    # Excel/Google Sheets seri tarihi: 46148.458333 = 06.05.2026 11:00 gibi
+    if isinstance(x, (int, float, np.integer, np.floating)):
+        try:
+            if 20000 < float(x) < 80000:
+                return pd.to_datetime(float(x), unit="D", origin="1899-12-30")
+        except Exception:
+            pass
 
     val = str(x).strip()
-    val = re.sub(r"\s+", " ", val)
-    val = val.replace("/", ".").replace(",", ".")
+    if val.lower() in ["nan", "nat", "", "-", "null", "none"]:
+        return pd.NaT
 
+    # Seri tarih metin olarak geldiyse: "46148.458333333336"
+    try:
+        numeric_val = float(val.replace(",", "."))
+        if 20000 < numeric_val < 80000:
+            return pd.to_datetime(numeric_val, unit="D", origin="1899-12-30")
+    except Exception:
+        pass
+
+    val = re.sub(r"\s+", " ", val)
+    val = val.replace("/", ".")
+
+    # Örn: "08.05.2026 09.00" veya "12.05:2026 16:30"
     if " " in val:
         d_part, t_part = val.split(" ", 1)
         d_part = d_part.replace(":", ".")
         t_part = t_part.replace(".", ":")
-        return f"{d_part} {t_part}"
+        val = f"{d_part} {t_part}"
+    else:
+        val = val.replace(":", ".")
 
-    val = val.replace(":", ".")
-    return val
+    return pd.to_datetime(val, errors="coerce", dayfirst=True)
 
 
 def para_temizle(deger):
@@ -383,11 +412,9 @@ if st.session_state["giris_yapildi"]:
                 df["Yapılan Test"] = df["Yapılan Test"].replace("NAN", "BİLİNMEYEN TEST")
 
             df["Test tarihi"] = df["Test tarihi"].apply(tarih_saat_duzelt)
-            df["Test tarihi"] = pd.to_datetime(df["Test tarihi"], errors="coerce", dayfirst=True)
 
             if "Numune Geliş Zamanı" in df.columns:
                 df["Numune Geliş Zamanı"] = df["Numune Geliş Zamanı"].apply(tarih_saat_duzelt)
-                df["Numune Geliş Zamanı"] = pd.to_datetime(df["Numune Geliş Zamanı"], errors="coerce", dayfirst=True)
             else:
                 df["Numune Geliş Zamanı"] = pd.NaT
 
