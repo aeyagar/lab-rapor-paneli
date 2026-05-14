@@ -344,7 +344,15 @@ def pdf_olustur(df_filtreli):
                 pdf.cell(40, 8, f"%{oran:.1f}", border=1, align="C")
                 pdf.ln()
 
-            pdf.ln(8)
+            # Kısa açıklama: Raporu okuyan kişinin SLA/TAT kavramlarını bilmesine gerek kalmasın
+            pdf.set_text_color(90, 90, 90)
+            pdf.set_font("Arial", "I", 8)
+            pdf.multi_cell(0, 5, tr_temizle(
+                "Aciklama: SLA, laboratuvarin belirlenen hedef sureler icinde analiz sonuclandirma performansini ifade eder. "
+                "TAT ise numunenin laboratuvara kabulunden test sonuclandirilmasina kadar gecen operasyonel suredir. "
+                "Bu bolumdeki adetler satir sayisini degil, Islenen Numune Sayisi toplamlarini esas alir."
+            ))
+            pdf.ln(6)
 
     pdf.set_text_color(0, 0, 0)
     pdf.set_fill_color(230, 240, 250)
@@ -374,6 +382,62 @@ def pdf_olustur(df_filtreli):
                 pdf.cell(25, 8, str(int(satir["İşlenen Numune Sayısı"])), border=1, align="C")
                 pdf.ln()
     pdf.ln(10)
+
+    # 📅 AYLIK DETAYLI NUMUNE VE TEST ANALİZİ
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_fill_color(230, 240, 250)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, tr_temizle(" AYLIK DETAYLI NUMUNE VE TEST ANALIZI"), ln=True, fill=True)
+    pdf.ln(3)
+
+    ay_sirasi = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    if "Ay" in df_pdf.columns:
+        mevcut_aylar = [ay for ay in df_pdf["Ay"].dropna().unique() if ay in ay_sirasi]
+        sirali_aylar = sorted(mevcut_aylar, key=lambda x: ay_sirasi.index(x))
+    else:
+        sirali_aylar = []
+
+    for ay in sirali_aylar:
+        df_ay = df_pdf[df_pdf["Ay"] == ay]
+        gelen_toplam = int(df_ay["Gelen Numune Sayısı"].sum()) if "Gelen Numune Sayısı" in df_ay.columns else 0
+        islenen_toplam = int(df_ay["İşlenen Numune Sayısı"].sum()) if "İşlenen Numune Sayısı" in df_ay.columns else 0
+
+        if islenen_toplam == 0 and gelen_toplam == 0:
+            continue
+
+        # Sayfa sonuna yaklaşıldıysa yeni sayfa aç
+        if pdf.get_y() > 245:
+            pdf.add_page()
+
+        pdf.set_fill_color(240, 240, 240)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(190, 8, tr_temizle(f" [{ay.upper()} AYI]  |  Gelen: {gelen_toplam} Numune  -  Islenen: {islenen_toplam} Analiz"), border=1, ln=True, fill=True)
+
+        pdf.set_fill_color(220, 220, 220)
+        pdf.set_font("Arial", "B", 8)
+        pdf.cell(80, 7, tr_temizle("Test Grubu"), border=1, fill=True)
+        pdf.cell(75, 7, tr_temizle("Grup Icerigi"), border=1, fill=True)
+        pdf.cell(35, 7, tr_temizle("Islenen Analiz"), border=1, align="C", fill=True)
+        pdf.ln()
+
+        pdf.set_font("Arial", "", 8)
+        if "PDF_Grup" in df_ay.columns and "İşlenen Numune Sayısı" in df_ay.columns:
+            aylik_grup = (
+                df_ay.groupby("PDF_Grup")["İşlenen Numune Sayısı"]
+                .sum()
+                .reset_index()
+                .sort_values("İşlenen Numune Sayısı", ascending=False)
+            )
+            for _, satir in aylik_grup.iterrows():
+                if satir["İşlenen Numune Sayısı"] > 0:
+                    if pdf.get_y() > 270:
+                        pdf.add_page()
+                    pdf.cell(80, 6, tr_temizle(satir["PDF_Grup"]), border=1)
+                    pdf.cell(75, 6, tr_temizle(grup_aciklamalari.get(satir["PDF_Grup"], "")), border=1)
+                    pdf.cell(35, 6, str(int(satir["İşlenen Numune Sayısı"])), border=1, align="C")
+                    pdf.ln()
+        pdf.ln(5)
 
     try:
         return bytes(pdf.output())
@@ -565,7 +629,11 @@ if st.session_state["giris_yapildi"]:
         # --- SLA / TAT ANALIZI ---
         st.divider()
         st.subheader("🎯 Operasyonel Hedef (SLA/TAT) Analizi")
-        st.caption("Bu bölümde başarı ve gecikme adetleri satır sayısıyla değil, **İşlenen Numune Sayısı / analiz adedi** toplamıyla hesaplanır.")
+        st.info(
+            "**SLA**: Belirlenen hedef süre içinde analiz sonuçlandırma performansıdır. "
+            "**TAT**: Numunenin laboratuvara kabulünden testin sonuçlandırılmasına kadar geçen operasyonel süredir. "
+            "Bu bölümdeki adetler satır sayısını değil, **İşlenen Numune Sayısı / analiz adedi** toplamını gösterir."
+        )
 
         tat_gecerli = df[df["TAT_Durum"].isin(["Hedef İçi", "Gecikmeli"])].copy()
         toplam_sla_is = tat_gecerli["İşlenen Numune Sayısı"].sum()
