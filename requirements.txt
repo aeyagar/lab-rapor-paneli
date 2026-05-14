@@ -5,4 +5,3 @@ numpy
 fpdf
 holidays
 matplotlib
-openpyxl
