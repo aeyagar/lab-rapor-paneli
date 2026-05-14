@@ -270,37 +270,19 @@ def pdf_olustur(df_filtreli):
         df_pdf["PDF_Grup"] = "Serolojik Testler"
 
     pdf = FPDF()
-pdf.set_auto_page_break(auto=True, margin=15)
-pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
 
-# --- LOGO EKLE ---
-if os.path.exists("logo.png"):
-    try:
-        pdf.image("logo.png", x=10, y=8, w=35)
-    except Exception as e:
-        print(f"Logo eklenemedi: {e}")
-
-# Başlığın logoya yapışmaması için boşluk
-pdf.ln(12)
-
-# --- ANA BAŞLIK ---
-pdf.set_fill_color(26, 74, 124)
-pdf.set_text_color(255, 255, 255)
-pdf.set_font("Arial", 'B', 16)
-pdf.cell(0, 15, tr_temizle("DIAGEN LABORATUVARI ANALIZ RAPORU"), ln=True, align='C', fill=True)
-
-# --- RAPOR TARİHİ ---
-pdf.set_text_color(100, 100, 100)
-pdf.set_font("Arial", 'I', 10)
-pdf.cell(
-    0,
-    8,
-    tr_temizle(f"Rapor Uretim Tarihi: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"),
-    ln=True,
-    align='R'
-)
-
-pdf.ln(5)
+    # --- PDF LOGO ---
+    # logo.png dosyası rapor.py ile aynı GitHub klasöründe olmalı.
+    if os.path.exists("logo.png"):
+        try:
+            pdf.image("logo.png", x=10, y=8, w=35)
+            pdf.ln(12)
+        except Exception:
+            pdf.ln(5)
+    else:
+        pdf.ln(5)
 
     pdf.set_fill_color(26, 74, 124)
     pdf.set_text_color(255, 255, 255)
