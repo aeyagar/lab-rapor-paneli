@@ -1,6 +1,8 @@
 streamlit
 pandas
 plotly
-fpdf
 numpy
+fpdf
 holidays
+matplotlib
+openpyxl
