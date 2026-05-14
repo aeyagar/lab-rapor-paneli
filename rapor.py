@@ -7,6 +7,8 @@ import datetime
 import os
 import re
 import numpy as np
+import tempfile
+import matplotlib.pyplot as plt
 
 # --- RESMI TATIL TAKVIMI ---
 try:
@@ -99,16 +101,20 @@ def normalize_text(text):
 def test_kategorisi_bul(test_adi):
     t = normalize_text(test_adi)
 
-    # Kullanıcının istediği net ayrım:
-    # PCR veya DNA geciyorsa molekuler
+    # 4 ana SLA kategorisi:
+    # 1) Test adında ARASTIRMA geçiyorsa diğer gruplara dahil edilmez.
+    if "ARASTIRMA" in t:
+        return "Araştırma Testleri (Hedef: Belirsiz)", None
+
+    # 2) PCR veya DNA geçiyorsa moleküler
     if "PCR" in t or "DNA" in t:
         return "Moleküler Test (Hedef: 3 Gün)", 3
 
-    # Ekim, Bakteri, Total Bakteri, Bakteriyolojik, Antibiyogram geciyorsa bakteriyolojik
+    # 3) Ekim, Bakteri, Total Bakteri, Bakteriyolojik, Antibiyogram geçiyorsa bakteriyolojik
     if any(x in t for x in ["EKIM", "BAKTERI", "TOTAL BAKTERI", "BAKTERIYOLOJIK", "ANTIBIYOGRAM"]):
         return "Bakteriyolojik Test (Hedef: 5 Gün)", 5
 
-    # Bunlar disinda kalan tum testler seroloji
+    # 4) Bunlar dışında kalan tüm testler seroloji
     return "Serolojik Test (Hedef: 3 Gün)", 3
 
 
@@ -120,7 +126,7 @@ def tat_hesapla(row):
     - Yeni veri girişinde saat yazmaya gerek yoktur.
     - Eski kayıtlarda saat varsa okunur ama hesapta sadece tarih kısmı kullanılır.
     - Kapsam: Numune Geliş Zamanı dolu ve 06.05.2026 veya sonrası olan kayıtlar.
-    - Hedefler: Moleküler 3 iş günü, Bakteriyolojik 5 iş günü, Seroloji 3 iş günü.
+    - Hedefler: Moleküler 3 iş günü, Bakteriyolojik 5 iş günü, Seroloji 3 iş günü, Araştırma hedef süresi belirsizdir ve SLA başarı/gecikme hesabına dahil edilmez.
     """
     kategori, hedef = test_kategorisi_bul(row.get("Yapılan Test", ""))
 
@@ -138,6 +144,11 @@ def tat_hesapla(row):
 
     if gelis.date() < milat:
         return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None, hedef])
+
+    # Araştırma testlerinde hedef süresi şimdilik belirsizdir.
+    # Bu kayıtlar raporda ayrı gösterilir ancak SLA başarı/gecikme oranına dahil edilmez.
+    if hedef is None:
+        return pd.Series([kategori, "Hedef Tanımsız", None, hedef])
 
     if pd.isna(test):
         return pd.Series([kategori, "Test Tarihi Eksik", None, hedef])
@@ -237,6 +248,8 @@ def pdf_olustur(df_filtreli):
 
     def pdf_kategori_bul(test_adi):
         kategori, _ = test_kategorisi_bul(test_adi)
+        if "Araştırma" in kategori:
+            return "Arastirma Testleri"
         if "Moleküler" in kategori:
             return "Molekuler Testler"
         if "Bakteriyolojik" in kategori:
@@ -244,9 +257,10 @@ def pdf_olustur(df_filtreli):
         return "Serolojik Testler"
 
     grup_aciklamalari = {
+        "Arastirma Testleri": "(Test adinda arastirma ibaresi bulunan ozel calismalar)",
         "Molekuler Testler": "(PCR veya DNA ifadeli molekuler analizler)",
         "Bakteriyolojik Testler": "(Ekim, bakteri, total bakteri, bakteriyolojik, antibiyogram vb.)",
-        "Serolojik Testler": "(Molekuler ve bakteriyolojik disindaki tum testler)",
+        "Serolojik Testler": "(Arastirma, molekuler ve bakteriyolojik disindaki tum testler)",
     }
 
     df_pdf = df_filtreli.copy()
@@ -277,6 +291,7 @@ def pdf_olustur(df_filtreli):
             toplam_analiz = tat_gecerli["İşlenen Numune Sayısı"].sum()
             hedef_ici = tat_gecerli[tat_gecerli["TAT_Durum"] == "Hedef İçi"]["İşlenen Numune Sayısı"].sum()
             gecikmeli = tat_gecerli[tat_gecerli["TAT_Durum"] == "Gecikmeli"]["İşlenen Numune Sayısı"].sum()
+            hedef_tanimsiz = df_pdf[df_pdf["TAT_Durum"] == "Hedef Tanımsız"]["İşlenen Numune Sayısı"].sum()
             basari = (hedef_ici / toplam_analiz * 100) if toplam_analiz > 0 else 0
 
             pdf.set_fill_color(220, 255, 220)
@@ -290,6 +305,8 @@ def pdf_olustur(df_filtreli):
             pdf.cell(63, 10, tr_temizle(f"Hedef Ici: {int(hedef_ici)}"), border=1)
             pdf.cell(64, 10, tr_temizle(f"Gecikmeli: {int(gecikmeli)}"), border=1, ln=True)
             pdf.cell(190, 10, tr_temizle(f"Genel Basari Orani: %{basari:.1f}"), border=1, ln=True, align="C")
+            if hedef_tanimsiz > 0:
+                pdf.cell(190, 8, tr_temizle(f"Arastirma / Hedef Tanimsiz Analiz: {int(hedef_tanimsiz)} (SLA basari oranina dahil degildir)"), border=1, ln=True, align="C")
             pdf.ln(5)
 
             pdf.set_fill_color(200, 200, 200)
@@ -427,6 +444,176 @@ def pdf_olustur(df_filtreli):
                     pdf.cell(35, 6, str(int(satir["İşlenen Numune Sayısı"])), border=1, align="C")
                     pdf.ln()
         pdf.ln(5)
+
+
+
+    # 📈 PDF GRAFIK SAYFALARI - dashboard ozetlerinin sunum versiyonu
+    def grafik_ekle(fig, baslik):
+        """Matplotlib grafigini gecici PNG olarak PDF'e ekler."""
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                fig.savefig(tmp.name, dpi=180, bbox_inches="tight")
+                tmp_path = tmp.name
+            plt.close(fig)
+            if pdf.get_y() > 120:
+                pdf.add_page()
+            pdf.set_fill_color(26, 74, 124)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Arial", "B", 11)
+            pdf.cell(0, 9, tr_temizle(baslik), ln=True, align="C", fill=True)
+            pdf.ln(2)
+            pdf.image(tmp_path, x=12, w=186)
+            pdf.ln(6)
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        except Exception:
+            try:
+                plt.close(fig)
+            except Exception:
+                pass
+
+    def stil_ver(ax, title=None):
+        ax.grid(axis="y", linestyle="--", alpha=0.25)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        if title:
+            ax.set_title(title, fontsize=13, fontweight="bold", pad=12)
+
+    try:
+        pdf.add_page()
+        pdf.set_fill_color(26, 74, 124)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Arial", "B", 15)
+        pdf.cell(0, 13, tr_temizle("DIAGEN DASHBOARD GRAFIK OZETI"), ln=True, align="C", fill=True)
+        pdf.set_text_color(80, 80, 80)
+        pdf.set_font("Arial", "I", 8)
+        pdf.multi_cell(0, 5, tr_temizle("Bu grafikler dashboard'daki ana gorsellerin PDF sunumuna uygun sadeleştirilmiş ozetidir. Adetlerde islenen analiz sayisi esas alinmistir."))
+        pdf.ln(3)
+
+        # 1) SLA genel hedef uyum donut/pasta
+        if all(c in df_pdf.columns for c in ["TAT_Durum", "İşlenen Numune Sayısı"]):
+            tat_gecerli = df_pdf[df_pdf["TAT_Durum"].isin(["Hedef İçi", "Gecikmeli"])]
+            if not tat_gecerli.empty:
+                tat_ozet = tat_gecerli.groupby("TAT_Durum")["İşlenen Numune Sayısı"].sum().reindex(["Hedef İçi", "Gecikmeli"]).fillna(0)
+                fig, ax = plt.subplots(figsize=(8.5, 4.5))
+                vals = tat_ozet.values
+                labels = [f"{idx}\n{int(val)} analiz" for idx, val in zip(tat_ozet.index, vals)]
+                ax.pie(vals, labels=labels, autopct=lambda p: f"%{p:.1f}" if p > 0 else "", startangle=90, wedgeprops={"width": 0.42})
+                ax.set_title("Genel Hedef Uyum Performansı", fontsize=14, fontweight="bold")
+                grafik_ekle(fig, "Genel Hedef Uyum Performansi")
+
+                # 2) SLA kategori bazlı bar
+                kat_sira = [
+                    "Moleküler Test (Hedef: 3 Gün)",
+                    "Bakteriyolojik Test (Hedef: 5 Gün)",
+                    "Serolojik Test (Hedef: 3 Gün)",
+                ]
+                kat_ozet = tat_gecerli.groupby(["TAT_Kategori", "TAT_Durum"])["İşlenen Numune Sayısı"].sum().unstack(fill_value=0)
+                kat_ozet = kat_ozet.reindex(kat_sira).fillna(0)
+                fig, ax = plt.subplots(figsize=(10, 5))
+                x = np.arange(len(kat_ozet.index))
+                hedef_vals = kat_ozet["Hedef İçi"].values if "Hedef İçi" in kat_ozet.columns else np.zeros(len(kat_ozet))
+                gec_vals = kat_ozet["Gecikmeli"].values if "Gecikmeli" in kat_ozet.columns else np.zeros(len(kat_ozet))
+                width = 0.36
+                ax.bar(x - width/2, hedef_vals, width, label="Hedef İçi")
+                ax.bar(x + width/2, gec_vals, width, label="Gecikmeli")
+                ax.set_xticks(x)
+                ax.set_xticklabels([str(i).split(" (")[0] for i in kat_ozet.index], rotation=15, ha="right")
+                ax.set_ylabel("İşlenen analiz adedi")
+                ax.legend()
+                stil_ver(ax, "Test Kategorilerine Göre Hedef Uyum")
+                for container in ax.containers:
+                    ax.bar_label(container, fmt="%.0f", fontsize=8)
+                grafik_ekle(fig, "Kategori Bazli Hedef Uyum Dagilimi")
+
+        # 3) Aylık işlem hacmi
+        if all(c in df_pdf.columns for c in ["Ay", "İşlenen Numune Sayısı"]):
+            aylik = df_pdf.groupby("Ay")["İşlenen Numune Sayısı"].sum().reindex(ay_sirasi).dropna()
+            if not aylik.empty:
+                fig, ax = plt.subplots(figsize=(10, 4.8))
+                aylik.plot(kind="bar", ax=ax)
+                ax.set_xlabel("")
+                ax.set_ylabel("İşlenen analiz adedi")
+                ax.tick_params(axis="x", rotation=35)
+                stil_ver(ax, "Aylık İşlenen Analiz Hacmi")
+                for container in ax.containers:
+                    ax.bar_label(container, fmt="%.0f", fontsize=8)
+                grafik_ekle(fig, "Aylik Islem Hacmi")
+
+        # 4) Aylık ciro
+        if all(c in df_pdf.columns for c in ["Ay", "Fatura Tutarı"]):
+            ciro = df_pdf.groupby("Ay")["Fatura Tutarı"].sum().reindex(ay_sirasi).dropna()
+            if ciro.sum() > 0:
+                fig, ax = plt.subplots(figsize=(10, 4.8))
+                ciro.plot(kind="bar", ax=ax)
+                ax.set_xlabel("")
+                ax.set_ylabel("Ciro (TL)")
+                ax.tick_params(axis="x", rotation=35)
+                stil_ver(ax, "Aylık Ciro Dağılımı")
+                grafik_ekle(fig, "Aylik Ciro Dagilimi")
+
+        # 5) Şehir bazlı operasyon hacmi
+        if all(c in df_pdf.columns for c in ["Numunenin Geldiği Şehir", "İşlenen Numune Sayısı"]):
+            sehir = df_pdf.groupby("Numunenin Geldiği Şehir")["İşlenen Numune Sayısı"].sum().sort_values(ascending=False).head(10)
+            if not sehir.empty:
+                fig, ax = plt.subplots(figsize=(10, 5.2))
+                sehir.sort_values().plot(kind="barh", ax=ax)
+                ax.set_xlabel("İşlenen analiz adedi")
+                ax.set_ylabel("")
+                stil_ver(ax, "Şehir Bazlı Operasyon Hacmi - İlk 10")
+                for container in ax.containers:
+                    ax.bar_label(container, fmt="%.0f", fontsize=8)
+                grafik_ekle(fig, "Sehir Bazli Operasyon Hacmi")
+
+        # 6) Tahsilat durumu
+        if all(c in df_pdf.columns for c in ["Tahsilat Durumu", "Fatura Tutarı"]):
+            tah = df_pdf.groupby("Tahsilat Durumu")["Fatura Tutarı"].sum().sort_values(ascending=False)
+            tah = tah[tah > 0]
+            if not tah.empty:
+                fig, ax = plt.subplots(figsize=(8.5, 4.8))
+                labels = [f"{idx}\n₺{val:,.0f}" for idx, val in tah.items()]
+                ax.pie(tah.values, labels=labels, autopct=lambda p: f"%{p:.1f}" if p > 0 else "", startangle=90)
+                ax.set_title("Finansal Tahsilat Durumu", fontsize=14, fontweight="bold")
+                grafik_ekle(fig, "Finansal Tahsilat Durumu")
+
+        # 7) Müşteri bazlı numune girişi
+        if all(c in df_pdf.columns for c in ["Kurum/Numune Sahibi", "Gelen Numune Sayısı"]):
+            mg = df_pdf.groupby("Kurum/Numune Sahibi")["Gelen Numune Sayısı"].sum().sort_values(ascending=False).head(12)
+            if not mg.empty:
+                fig, ax = plt.subplots(figsize=(10, 5.6))
+                mg.sort_values().plot(kind="barh", ax=ax)
+                ax.set_xlabel("Gelen numune adedi")
+                ax.set_ylabel("")
+                stil_ver(ax, "Müşteri Bazlı Numune Girişi - İlk 12")
+                grafik_ekle(fig, "Musteri Bazli Numune Girisi")
+
+        # 8) Müşteri bazlı işlenen analiz
+        if all(c in df_pdf.columns for c in ["Kurum/Numune Sahibi", "İşlenen Numune Sayısı"]):
+            mi = df_pdf.groupby("Kurum/Numune Sahibi")["İşlenen Numune Sayısı"].sum().sort_values(ascending=False).head(12)
+            if not mi.empty:
+                fig, ax = plt.subplots(figsize=(10, 5.6))
+                mi.sort_values().plot(kind="barh", ax=ax)
+                ax.set_xlabel("İşlenen analiz adedi")
+                ax.set_ylabel("")
+                stil_ver(ax, "Müşterilere Göre İşlenen Analiz - İlk 12")
+                grafik_ekle(fig, "Musterilere Gore Islenen Analiz")
+
+        # 9) Tüm test panelleri - ilk 20
+        if all(c in df_pdf.columns for c in ["Yapılan Test", "İşlenen Numune Sayısı"]):
+            testler = df_pdf.groupby("Yapılan Test")["İşlenen Numune Sayısı"].sum().sort_values(ascending=False).head(20)
+            if not testler.empty:
+                fig, ax = plt.subplots(figsize=(10, 7))
+                testler.sort_values().plot(kind="barh", ax=ax)
+                ax.set_xlabel("İşlenen analiz adedi")
+                ax.set_ylabel("")
+                stil_ver(ax, "Çalışılan Test Panelleri - İlk 20")
+                grafik_ekle(fig, "Calisilan Test Panelleri")
+
+    except Exception:
+        # Grafik üretiminde sorun olursa PDF tablo raporu yine üretilebilsin.
+        pass
 
     try:
         return bytes(pdf.output())
@@ -621,20 +808,22 @@ if st.session_state["giris_yapildi"]:
         st.info(
             "**SLA**: Belirlenen hedef süre içinde analiz sonuçlandırma performansıdır. "
             "**TAT**: Numunenin laboratuvara kabulünden testin sonuçlandırılmasına kadar geçen operasyonel süredir. "
-            "Bu bölümdeki adetler satır sayısını değil, **İşlenen Numune Sayısı / analiz adedi** toplamını gösterir."
+            "Bu bölümdeki adetler satır sayısını değil, **İşlenen Numune Sayısı / analiz adedi** toplamını gösterir. Araştırma ibaresi geçen testler ayrı kategori olarak izlenir; hedef süresi belirsiz olduğu için başarı/gecikme oranına dahil edilmez."
         )
 
         tat_gecerli = df[df["TAT_Durum"].isin(["Hedef İçi", "Gecikmeli"])].copy()
         toplam_sla_is = tat_gecerli["İşlenen Numune Sayısı"].sum()
         hedef_ici_sla_is = tat_gecerli[tat_gecerli["TAT_Durum"] == "Hedef İçi"]["İşlenen Numune Sayısı"].sum()
         gecikmeli_sla_is = tat_gecerli[tat_gecerli["TAT_Durum"] == "Gecikmeli"]["İşlenen Numune Sayısı"].sum()
+        hedef_tanimsiz_is = df[df["TAT_Durum"] == "Hedef Tanımsız"]["İşlenen Numune Sayısı"].sum()
         basari_orani = (hedef_ici_sla_is / toplam_sla_is * 100) if toplam_sla_is > 0 else 0
 
-        s1, s2, s3, s4 = st.columns(4)
+        s1, s2, s3, s4, s5 = st.columns(5)
         s1.metric("SLA Kapsamındaki Analiz", f"{int(toplam_sla_is):,.0f}")
         s2.metric("Hedef İçi Analiz", f"{int(hedef_ici_sla_is):,.0f}")
         s3.metric("Gecikmeli Analiz", f"{int(gecikmeli_sla_is):,.0f}")
         s4.metric("Başarı Oranı", f"%{basari_orani:.1f}")
+        s5.metric("Araştırma / Hedef Tanımsız", f"{int(hedef_tanimsiz_is):,.0f}")
 
         if toplam_sla_is > 0:
             t1, t2 = st.columns(2)
