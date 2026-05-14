@@ -112,56 +112,46 @@ def test_kategorisi_bul(test_adi):
     return "Serolojik Test (Hedef: 3 Gün)", 3
 
 
-def adjust_start_time(dt):
-    """Mesai disi gelisleri bir sonraki uygun mesai baslangicina ceker."""
-    if pd.isna(dt):
-        return dt
-
-    dt = pd.Timestamp(dt)
-
-    # Hafta sonu geldiyse pazartesi 08:00
-    if dt.weekday() >= 5:
-        days_to_add = 7 - dt.weekday()
-        return (dt + pd.Timedelta(days=days_to_add)).replace(hour=8, minute=0, second=0, microsecond=0)
-
-    # 18:00 ve sonrasi geldiyse sonraki is gunu 08:00
-    if dt.hour >= 18:
-        dt = dt + pd.Timedelta(days=1)
-        while dt.weekday() >= 5:
-            dt = dt + pd.Timedelta(days=1)
-        return dt.replace(hour=8, minute=0, second=0, microsecond=0)
-
-    # 08:00 oncesi geldiyse ayni gun 08:00
-    if dt.hour < 8:
-        return dt.replace(hour=8, minute=0, second=0, microsecond=0)
-
-    return dt
-
-
 def tat_hesapla(row):
+    """
+    SLA/TAT hesabı yalnızca tarih bazlı yapılır.
+
+    Notlar:
+    - Yeni veri girişinde saat yazmaya gerek yoktur.
+    - Eski kayıtlarda saat varsa okunur ama hesapta sadece tarih kısmı kullanılır.
+    - Kapsam: Numune Geliş Zamanı dolu ve 06.05.2026 veya sonrası olan kayıtlar.
+    - Hedefler: Moleküler 3 iş günü, Bakteriyolojik 5 iş günü, Seroloji 3 iş günü.
+    """
     kategori, hedef = test_kategorisi_bul(row.get("Yapılan Test", ""))
 
     gelis = row.get("Numune Geliş Zamanı")
     test = row.get("Test tarihi")
     milat = pd.Timestamp("2026-05-06").date()
 
-    # Sadece numune gelis zamani girilen ve 6 Mayis 2026 sonrasi olanlar SLA kapsaminda
     if pd.isna(gelis):
         return pd.Series([kategori, "Numune Geliş Zamanı Yok", None, hedef])
 
-    gelis = pd.Timestamp(gelis)
+    try:
+        gelis = pd.Timestamp(gelis)
+    except Exception:
+        return pd.Series([kategori, "Hatalı Numune Geliş Tarihi", None, hedef])
+
     if gelis.date() < milat:
         return pd.Series([kategori, "6 Mayıs Öncesi (Kapsam Dışı)", None, hedef])
 
     if pd.isna(test):
-        return pd.Series([kategori, "Test Zamanı Eksik", None, hedef])
-
-    test = pd.Timestamp(test)
-    gelis_adj = adjust_start_time(gelis)
+        return pd.Series([kategori, "Test Tarihi Eksik", None, hedef])
 
     try:
-        baslangic = np.datetime64(gelis_adj.date(), "D")
+        test = pd.Timestamp(test)
+    except Exception:
+        return pd.Series([kategori, "Hatalı Test Tarihi", None, hedef])
+
+    try:
+        # Sadece tarih bazlı hesap: saat bilgisi varsa yok sayılır.
+        baslangic = np.datetime64(gelis.date(), "D")
         bitis = np.datetime64(test.date(), "D")
+
         gun_farki = np.busday_count(baslangic, bitis, holidays=tat_tatiller)
         gun_farki = max(int(gun_farki), 0)
 
@@ -170,7 +160,6 @@ def tat_hesapla(row):
 
     except Exception as e:
         return pd.Series([kategori, f"Hatalı Tarih: {e}", None, hedef])
-
 
 def tarih_saat_duzelt(x):
     """
