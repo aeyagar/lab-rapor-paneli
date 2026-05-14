@@ -261,7 +261,7 @@ def pdf_olustur(df_filtreli):
     }
 
     df_pdf = df_filtreli.copy()
-    if "Yapılan Test" in df_columns:
+    if "Yapılan Test" in df_pdf.columns:
         df_pdf["PDF_Grup"] = df_pdf["Yapılan Test"].apply(pdf_kategori_bul)
     else:
         df_pdf["PDF_Grup"] = "Serolojik Testler"
@@ -279,17 +279,72 @@ def pdf_olustur(df_filtreli):
     pdf.cell(0, 8, tr_temizle(f"Rapor Uretim Tarihi: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align="R")
     pdf.ln(5)
 
-    if "TAT_Durum" in df_pdf.columns and "İşlenen Numune Sayısı" in df_pdf.columns:
-        tat_gecerli = df_pdf[df_pdf["TAT_Durum"].isin(["Hedef İçi", "Gecikmeli"])]
-        toplam_is = tat_gecerli["İşlenen Numune Sayısı"].sum()
-        if toplam_is > 0:
-            hedef_ici_is = tat_gecerli[tat_gecerli["TAT_Durum"] == "Hedef İçi"]["İşlenen Numune Sayısı"].sum()
-            basari = (hedef_ici_is / toplam_is) * 100
+    # 🎯 OPERASYONEL HEDEF (SLA/TAT) PDF ÖZETİ
+    # Bu bölüm satır sayısını değil, İşlenen Numune Sayısı toplamını esas alır.
+    if all(col in df_pdf.columns for col in ["TAT_Durum", "TAT_Kategori", "İşlenen Numune Sayısı"]):
+        tat_gecerli = df_pdf[df_pdf["TAT_Durum"].isin(["Hedef İçi", "Gecikmeli"])].copy()
+
+        if not tat_gecerli.empty:
+            toplam_analiz = tat_gecerli["İşlenen Numune Sayısı"].sum()
+            hedef_ici = tat_gecerli[tat_gecerli["TAT_Durum"] == "Hedef İçi"]["İşlenen Numune Sayısı"].sum()
+            gecikmeli = tat_gecerli[tat_gecerli["TAT_Durum"] == "Gecikmeli"]["İşlenen Numune Sayısı"].sum()
+            basari = (hedef_ici / toplam_analiz * 100) if toplam_analiz > 0 else 0
+
             pdf.set_fill_color(220, 255, 220)
-            pdf.set_text_color(0, 100, 0)
-            pdf.set_font("Arial", "B", 11)
-            pdf.cell(0, 10, tr_temizle(f" HEDEF SURE (SLA/TAT) UYUM BASARISI: %{basari:.1f}"), ln=True, fill=True, align="C")
+            pdf.set_text_color(0, 90, 0)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, tr_temizle(" OPERASYONEL HEDEF (SLA/TAT) PERFORMANSI"), ln=True, fill=True, align="C")
+
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(63, 10, tr_temizle(f"Toplam Analiz: {int(toplam_analiz)}"), border=1)
+            pdf.cell(63, 10, tr_temizle(f"Hedef Ici: {int(hedef_ici)}"), border=1)
+            pdf.cell(64, 10, tr_temizle(f"Gecikmeli: {int(gecikmeli)}"), border=1, ln=True)
+            pdf.cell(190, 10, tr_temizle(f"Genel Basari Orani: %{basari:.1f}"), border=1, ln=True, align="C")
             pdf.ln(5)
+
+            pdf.set_fill_color(200, 200, 200)
+            pdf.set_font("Arial", "B", 9)
+            pdf.cell(80, 8, tr_temizle("Test Kategorisi"), border=1, fill=True)
+            pdf.cell(35, 8, tr_temizle("Hedef Ici"), border=1, align="C", fill=True)
+            pdf.cell(35, 8, tr_temizle("Gecikmeli"), border=1, align="C", fill=True)
+            pdf.cell(40, 8, tr_temizle("Basari %"), border=1, align="C", fill=True)
+            pdf.ln()
+
+            kategori_ozet = (
+                tat_gecerli
+                .groupby(["TAT_Kategori", "TAT_Durum"])["İşlenen Numune Sayısı"]
+                .sum()
+                .unstack(fill_value=0)
+                .reset_index()
+            )
+
+            # Üç ana kategori sırasını PDF'de sabit tut
+            kategori_sirasi = [
+                "Moleküler Test (Hedef: 3 Gün)",
+                "Bakteriyolojik Test (Hedef: 5 Gün)",
+                "Serolojik Test (Hedef: 3 Gün)",
+            ]
+            kategori_ozet["_sira"] = kategori_ozet["TAT_Kategori"].apply(
+                lambda x: kategori_sirasi.index(x) if x in kategori_sirasi else 99
+            )
+            kategori_ozet = kategori_ozet.sort_values("_sira")
+
+            pdf.set_font("Arial", "", 9)
+            for _, row in kategori_ozet.iterrows():
+                kategori = row["TAT_Kategori"]
+                h_ici = row["Hedef İçi"] if "Hedef İçi" in row else 0
+                gec = row["Gecikmeli"] if "Gecikmeli" in row else 0
+                toplam = h_ici + gec
+                oran = (h_ici / toplam * 100) if toplam > 0 else 0
+
+                pdf.cell(80, 8, tr_temizle(kategori), border=1)
+                pdf.cell(35, 8, str(int(h_ici)), border=1, align="C")
+                pdf.cell(35, 8, str(int(gec)), border=1, align="C")
+                pdf.cell(40, 8, f"%{oran:.1f}", border=1, align="C")
+                pdf.ln()
+
+            pdf.ln(8)
 
     pdf.set_text_color(0, 0, 0)
     pdf.set_fill_color(230, 240, 250)
@@ -308,65 +363,7 @@ def pdf_olustur(df_filtreli):
     pdf.cell(115, 8, tr_temizle("Grup Icerigi"), border=1, fill=True)
     pdf.cell(25, 8, tr_temizle("Toplam"), border=1, align="C", fill=True)
     pdf.ln()
-# 🎯 SLA / HEDEF PERFORMANS ÖZETİ
-if all(col in df_pdf.columns for col in ['TAT_Durum', 'TAT_Kategori', 'İşlenen Numune Sayısı']):
-    tat_gecerli = df_pdf[df_pdf['TAT_Durum'].isin(['Hedef İçi', 'Gecikmeli'])].copy()
 
-    if not tat_gecerli.empty:
-        toplam_analiz = tat_gecerli['İşlenen Numune Sayısı'].sum()
-        hedef_ici = tat_gecerli[tat_gecerli['TAT_Durum'] == 'Hedef İçi']['İşlenen Numune Sayısı'].sum()
-        gecikmeli = tat_gecerli[tat_gecerli['TAT_Durum'] == 'Gecikmeli']['İşlenen Numune Sayısı'].sum()
-
-        basari = (hedef_ici / toplam_analiz * 100) if toplam_analiz > 0 else 0
-
-        pdf.set_fill_color(220, 255, 220)
-        pdf.set_text_color(0, 90, 0)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, tr_temizle(" OPERASYONEL HEDEF (SLA) PERFORMANSI"), ln=True, fill=True)
-
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", 'B', 10)
-
-        pdf.cell(63, 10, tr_temizle(f"Toplam Analiz: {int(toplam_analiz)}"), border=1)
-        pdf.cell(63, 10, tr_temizle(f"Hedef Ici: {int(hedef_ici)}"), border=1)
-        pdf.cell(64, 10, tr_temizle(f"Gecikmeli: {int(gecikmeli)}"), border=1, ln=True)
-
-        pdf.cell(190, 10, tr_temizle(f"Genel Basari Orani: %{basari:.1f}"), border=1, ln=True, align='C')
-        pdf.ln(5)
-
-        # Kategori bazlı SLA tablosu
-        pdf.set_fill_color(200, 200, 200)
-        pdf.set_font("Arial", 'B', 9)
-        pdf.cell(80, 8, tr_temizle("Test Kategorisi"), border=1, fill=True)
-        pdf.cell(35, 8, tr_temizle("Hedef Ici"), border=1, align='C', fill=True)
-        pdf.cell(35, 8, tr_temizle("Gecikmeli"), border=1, align='C', fill=True)
-        pdf.cell(40, 8, tr_temizle("Basari %"), border=1, align='C', fill=True)
-        pdf.ln()
-
-        pdf.set_font("Arial", '', 9)
-
-        kategori_ozet = (
-            tat_gecerli
-            .groupby(['TAT_Kategori', 'TAT_Durum'])['İşlenen Numune Sayısı']
-            .sum()
-            .unstack(fill_value=0)
-            .reset_index()
-        )
-
-        for _, row in kategori_ozet.iterrows():
-            kategori = row['TAT_Kategori']
-            h_ici = row['Hedef İçi'] if 'Hedef İçi' in row else 0
-            gec = row['Gecikmeli'] if 'Gecikmeli' in row else 0
-            toplam = h_ici + gec
-            oran = (h_ici / toplam * 100) if toplam > 0 else 0
-
-            pdf.cell(80, 8, tr_temizle(kategori), border=1)
-            pdf.cell(35, 8, str(int(h_ici)), border=1, align='C')
-            pdf.cell(35, 8, str(int(gec)), border=1, align='C')
-            pdf.cell(40, 8, f"%{oran:.1f}", border=1, align='C')
-            pdf.ln()
-
-        pdf.ln(8)
     pdf.set_font("Arial", "", 9)
     if "Yapılan Test" in df_pdf.columns:
         genel_grup = df_pdf.groupby("PDF_Grup")["İşlenen Numune Sayısı"].sum().reset_index()
