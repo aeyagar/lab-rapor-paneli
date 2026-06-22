@@ -264,7 +264,7 @@ def fatura_durumu_aylik_ozet(df, ay_sirasi):
     if tmp.empty:
         return pd.DataFrame(columns=["Ay", "Toplam İş", "Faturası Girilen İş", "Faturası Girilmeyen İş", "Faturası Girilmeyen %"])
 
-    tmp["Fatura_Duzenlendi"] = tmp["Fatura Durumu"].apply(lambda x: "DUZENLENDI" in normalize_text(x))
+    tmp["Fatura_Duzenlendi"] = tmp["Fatura Durumu"].apply(lambda x: normalize_text(x) == "DUZENLENDI")
 
     is_bazli = (
         tmp.groupby(["Ay", "Sıra No"], as_index=False)["Fatura_Duzenlendi"]
