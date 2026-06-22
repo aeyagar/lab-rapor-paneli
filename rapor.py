@@ -53,11 +53,15 @@ st.markdown("""
     }
     .mini-ciro-ay { font-size: 1rem; font-weight: 800; color: var(--text-color); margin-bottom: 5px; }
     .mini-ciro-deger { color: #1a4a7c; font-size: 1.25rem; font-weight: 900; }
+    .mini-fatura-yuzde { font-size: 0.95rem; font-weight: 800; margin-top: 8px; color: var(--text-color); }
+    .mini-fatura-kritik { color: #E74C3C; font-weight: 900; }
+    .mini-fatura-iyi { color: #2ECC71; font-weight: 900; }
     @media (prefers-color-scheme: dark) {
         .logo-alti-yazi { color: #3b82f6 !important; }
         div[data-testid="stMetricValue"] > div { color: #3b82f6 !important; }
         .mini-ciro-kutu { border-color: #3b82f6; }
         .mini-ciro-deger { color: #3b82f6; }
+        .mini-fatura-yuzde { color: var(--text-color); }
         div[data-testid="stSidebarUserContent"] .stMultiSelect,
         div[data-testid="stSidebarUserContent"] .stSelectbox,
         div[data-testid="stSidebarUserContent"] .stRadio { border: 2px solid #3b82f6 !important; }
@@ -236,6 +240,56 @@ def para_temizle(deger):
         return float(deger)
     except Exception:
         return 0.0
+
+
+def fatura_durumu_aylik_ozet(df, ay_sirasi):
+    """
+    Aylık faturalama durumunu iş/sıra no bazında hesaplar.
+
+    Kural:
+    - Aynı Sıra No altında birden fazla test satırı olabilir.
+    - Bu satırlardan herhangi birinde Fatura Durumu = Düzenlendi ise,
+      o Sıra No'ya ait iş faturalandırılmış kabul edilir.
+    - Yüzde hesabı satır/test bazında değil, benzersiz Sıra No bazındadır.
+    """
+    gerekli = {"Ay", "Sıra No", "Fatura Durumu"}
+    if not gerekli.issubset(set(df.columns)):
+        return pd.DataFrame(columns=["Ay", "Toplam İş", "Faturası Girilen İş", "Faturası Girilmeyen İş", "Faturası Girilmeyen %"])
+
+    tmp = df[["Ay", "Sıra No", "Fatura Durumu"]].copy()
+    tmp = tmp.dropna(subset=["Ay", "Sıra No"])
+    tmp["Sıra No"] = tmp["Sıra No"].astype(str).str.strip()
+    tmp = tmp[(tmp["Sıra No"] != "") & (tmp["Sıra No"].str.upper() != "NAN")]
+
+    if tmp.empty:
+        return pd.DataFrame(columns=["Ay", "Toplam İş", "Faturası Girilen İş", "Faturası Girilmeyen İş", "Faturası Girilmeyen %"])
+
+    tmp["Fatura_Duzenlendi"] = tmp["Fatura Durumu"].apply(lambda x: "DUZENLENDI" in normalize_text(x))
+
+    is_bazli = (
+        tmp.groupby(["Ay", "Sıra No"], as_index=False)["Fatura_Duzenlendi"]
+        .max()
+    )
+
+    ozet = (
+        is_bazli.groupby("Ay")
+        .agg(
+            **{
+                "Toplam İş": ("Sıra No", "nunique"),
+                "Faturası Girilen İş": ("Fatura_Duzenlendi", "sum"),
+            }
+        )
+        .reset_index()
+    )
+    ozet["Faturası Girilen İş"] = ozet["Faturası Girilen İş"].astype(int)
+    ozet["Faturası Girilmeyen İş"] = ozet["Toplam İş"] - ozet["Faturası Girilen İş"]
+    ozet["Faturası Girilmeyen %"] = np.where(
+        ozet["Toplam İş"] > 0,
+        (ozet["Faturası Girilmeyen İş"] / ozet["Toplam İş"] * 100),
+        0,
+    )
+    ozet["Ay_Sirasi"] = ozet["Ay"].apply(lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
+    return ozet.sort_values("Ay_Sirasi")
 
 # --- PDF MOTORU ---
 def pdf_olustur(df_filtreli):
@@ -638,8 +692,12 @@ if st.session_state["giris_yapildi"]:
                     sutun_map[col] = "İşlenen Numune Sayısı"
                 elif "YAPILAN" in c_upper:
                     sutun_map[col] = "Yapılan Test"
+                elif ("SIRA" in c_upper and "NO" in c_upper) or "SIRANO" in c_upper:
+                    sutun_map[col] = "Sıra No"
                 elif "FATURA" in c_upper and "TUTAR" in c_upper:
                     sutun_map[col] = "Fatura Tutarı"
+                elif "FATURA" in c_upper and "DURUM" in c_upper:
+                    sutun_map[col] = "Fatura Durumu"
                 elif "TAHSILAT" in c_upper:
                     sutun_map[col] = "Tahsilat Durumu"
                 elif "SEHIR" in c_upper:
@@ -668,7 +726,7 @@ if st.session_state["giris_yapildi"]:
             df.replace("NaN", np.nan, inplace=True)
 
             # Birlesik satirlar icin once genel alanlari doldur
-            sutunlar_ffill = ["Test tarihi", "Kurum/Numune Sahibi", "Numunenin Geldiği Şehir"]
+            sutunlar_ffill = ["Test tarihi", "Kurum/Numune Sahibi", "Numunenin Geldiği Şehir", "Sıra No"]
             for col in sutunlar_ffill:
                 if col in df.columns:
                     df[col] = df[col].ffill()
@@ -718,6 +776,10 @@ if st.session_state["giris_yapildi"]:
                 df["Fatura Tutarı"] = df["Fatura Tutarı"].apply(para_temizle)
             if "Tahsilat Durumu" in df.columns:
                 df["Tahsilat Durumu"] = df["Tahsilat Durumu"].fillna("Belirtilmedi")
+            if "Fatura Durumu" in df.columns:
+                df["Fatura Durumu"] = df["Fatura Durumu"].fillna("")
+            if "Sıra No" in df.columns:
+                df["Sıra No"] = df["Sıra No"].ffill().astype(str).str.strip()
 
             return df
 
@@ -884,18 +946,47 @@ if st.session_state["giris_yapildi"]:
             mevcut_kolonlar = [c for c in kolonlar if c in df.columns]
             st.dataframe(df[mevcut_kolonlar], use_container_width=True)
 
-        # --- AYLIK CIRO ---
+        # --- AYLIK CIRO + FATURASI GIRILMEYEN IS TAKIBI ---
         if "Fatura Tutarı" in df.columns:
             st.markdown("<br><h5 style='text-align:center; font-weight: 800; color: var(--text-color);'>📅 Aylık Ciro Dağılımı</h5>", unsafe_allow_html=True)
             aylik_ciro = df.groupby("Ay")["Fatura Tutarı"].sum().reset_index()
-            aylik_ciro["Ay_Sirasi"] = aylik_ciro["Ay"].apply(lambda x: ay_sirasi.index(x))
+            aylik_ciro["Ay_Sirasi"] = aylik_ciro["Ay"].apply(lambda x: ay_sirasi.index(x) if x in ay_sirasi else 99)
             aylik_ciro = aylik_ciro.sort_values("Ay_Sirasi")
+
+            fatura_ozet = fatura_durumu_aylik_ozet(df, ay_sirasi)
+            fatura_dict = {}
+            if not fatura_ozet.empty:
+                fatura_dict = fatura_ozet.set_index("Ay").to_dict("index")
 
             html_content = '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 10px;">'
             for _, row in aylik_ciro.iterrows():
-                html_content += f'<div class="mini-ciro-kutu"><div class="mini-ciro-ay">{row["Ay"]}</div><div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.2f}</div></div>'
+                ay = row["Ay"]
+                fatura_bilgi = fatura_dict.get(ay)
+                if fatura_bilgi:
+                    yuzde = float(fatura_bilgi.get("Faturası Girilmeyen %", 0))
+                    faturasiz_is = int(fatura_bilgi.get("Faturası Girilmeyen İş", 0))
+                    toplam_is = int(fatura_bilgi.get("Toplam İş", 0))
+                    renk_sinifi = "mini-fatura-kritik" if yuzde > 0 else "mini-fatura-iyi"
+                    fatura_satiri = (
+                        f'<div class="mini-fatura-yuzde">Faturası Girilmeyen İş: '
+                        f'<span class="{renk_sinifi}">%{yuzde:.1f}</span></div>'
+                        f'<div style="font-size:0.8rem; opacity:0.8;">{faturasiz_is}/{toplam_is} iş</div>'
+                    )
+                else:
+                    fatura_satiri = '<div class="mini-fatura-yuzde">Fatura durumu verisi yok</div>'
+
+                html_content += (
+                    f'<div class="mini-ciro-kutu">'
+                    f'<div class="mini-ciro-ay">{ay}</div>'
+                    f'<div class="mini-ciro-deger">₺ {row["Fatura Tutarı"]:,.2f}</div>'
+                    f'{fatura_satiri}'
+                    f'</div>'
+                )
             html_content += "</div>"
             st.markdown(html_content, unsafe_allow_html=True)
+
+            if "Sıra No" not in df.columns or "Fatura Durumu" not in df.columns:
+                st.warning("Faturası girilmeyen iş yüzdesi için 'Sıra No' ve 'Fatura Durumu' kolonları gereklidir.")
 
         st.divider()
 
