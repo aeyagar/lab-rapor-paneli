@@ -24,33 +24,66 @@ except Exception:
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
-# --- BAKIM MODU ---
-# Tekrar kullanıma açmak için True değerini False yapın.
-BAKIM_MODU = True
+# --- SERVICE UNAVAILABLE MODU ---
+# Sistemi tekrar normal kullanıma açmak için True değerini False yapın.
+SERVIS_KAPALI = True
 
-if BAKIM_MODU:
+if SERVIS_KAPALI:
     st.markdown("""
     <style>
-    [data-testid="stSidebar"] {display:none;}
-    header {visibility:hidden;}
-    .block-container {max-width:1000px; padding-top:12vh;}
-    .bakim-kutusu {border:4px solid #1a4a7c; border-radius:24px; padding:55px 35px; text-align:center; margin:auto;}
-    .bakim-ikon {font-size:70px; margin-bottom:10px;}
-    .bakim-baslik {font-size:42px; font-weight:900; margin-bottom:20px;}
-    .bakim-metin {font-size:21px; font-weight:600; line-height:1.6;}
-    .bakim-alt {margin-top:28px; font-size:15px; opacity:.70;}
+        [data-testid="stSidebar"] {display: none;}
+        header {visibility: hidden;}
+        footer {visibility: hidden;}
+        .block-container {
+            max-width: 980px;
+            padding-top: 13vh;
+        }
+        .error-box {
+            border: 1px solid #343a40;
+            border-radius: 10px;
+            padding: 48px 46px;
+            margin: auto;
+            background: rgba(30, 33, 38, 0.20);
+        }
+        .error-code {
+            font-family: monospace;
+            font-size: 16px;
+            opacity: 0.60;
+            margin-bottom: 18px;
+        }
+        .error-title {
+            font-size: 40px;
+            font-weight: 750;
+            margin-bottom: 25px;
+            letter-spacing: -0.5px;
+        }
+        .error-text {
+            font-size: 19px;
+            line-height: 1.7;
+            font-weight: 450;
+            opacity: 0.88;
+        }
+        .error-detail {
+            margin-top: 34px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(128,128,128,0.25);
+            font-family: monospace;
+            font-size: 14px;
+            opacity: 0.55;
+        }
     </style>
-    <div class="bakim-kutusu">
-      <div class="bakim-ikon">🛠️</div>
-      <div class="bakim-baslik">Sistem Geçici Olarak Bakım Modundadır</div>
-      <div class="bakim-metin">
-        Laboratuvar Rapor ve Analiz Paneli üzerinde<br>
-        sistem güncelleme ve bakım çalışmaları yürütülmektedir.<br><br>
-        Bu süre içerisinde raporlama ekranına erişim geçici olarak durdurulmuştur.
-      </div>
-      <div class="bakim-alt">
-        Sistem güncelleme çalışmaları tamamlandığında tekrar kullanıma açılacaktır.
-      </div>
+
+    <div class="error-box">
+        <div class="error-code">HTTP 503</div>
+        <div class="error-title">Service Temporarily Unavailable</div>
+        <div class="error-text">
+            The reporting service is currently unavailable due to an unexpected system error.<br><br>
+            We are unable to process your request at this time.<br>
+            Please try again later.
+        </div>
+        <div class="error-detail">
+            Error: Service Unavailable &nbsp;|&nbsp; Status Code: 503
+        </div>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
