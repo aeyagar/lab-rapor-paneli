@@ -24,6 +24,38 @@ except Exception:
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", layout="wide")
 
+# --- BAKIM MODU ---
+# Tekrar kullanıma açmak için True değerini False yapın.
+BAKIM_MODU = True
+
+if BAKIM_MODU:
+    st.markdown("""
+    <style>
+    [data-testid="stSidebar"] {display:none;}
+    header {visibility:hidden;}
+    .block-container {max-width:1000px; padding-top:12vh;}
+    .bakim-kutusu {border:4px solid #1a4a7c; border-radius:24px; padding:55px 35px; text-align:center; margin:auto;}
+    .bakim-ikon {font-size:70px; margin-bottom:10px;}
+    .bakim-baslik {font-size:42px; font-weight:900; margin-bottom:20px;}
+    .bakim-metin {font-size:21px; font-weight:600; line-height:1.6;}
+    .bakim-alt {margin-top:28px; font-size:15px; opacity:.70;}
+    </style>
+    <div class="bakim-kutusu">
+      <div class="bakim-ikon">🛠️</div>
+      <div class="bakim-baslik">Sistem Geçici Olarak Bakım Modundadır</div>
+      <div class="bakim-metin">
+        Laboratuvar Rapor ve Analiz Paneli üzerinde<br>
+        sistem güncelleme ve bakım çalışmaları yürütülmektedir.<br><br>
+        Bu süre içerisinde raporlama ekranına erişim geçici olarak durdurulmuştur.
+      </div>
+      <div class="bakim-alt">
+        Sistem güncelleme çalışmaları tamamlandığında tekrar kullanıma açılacaktır.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+
 # --- CSS ---
 st.markdown("""
 <style>
