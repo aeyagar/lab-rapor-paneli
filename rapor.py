@@ -26,7 +26,7 @@ st.set_page_config(page_title="DİAGEN Veteriner LAB Paneli", page_icon="🐄", 
 
 # --- SERVICE UNAVAILABLE MODU ---
 # Sistemi tekrar normal kullanıma açmak için True değerini False yapın.
-SERVIS_KAPALI = False
+SERVIS_KAPALI = True
 
 if SERVIS_KAPALI:
     st.markdown("""
